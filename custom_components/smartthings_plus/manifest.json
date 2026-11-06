@@ -1,0 +1,12 @@
+{
+  "domain": "smartthings_plus",
+  "name": "SmartThings Plus",
+  "codeowners": ["@willyzha"],
+  "config_flow": true,
+  "documentation": "https://github.com/willyzha/smartthings-pat-refresher",
+  "integration_type": "hub",
+  "iot_class": "cloud_polling",
+  "issue_tracker": "https://github.com/willyzha/smartthings-pat-refresher/issues",
+  "requirements": ["aiohttp>=3.9.0"],
+  "version": "1.0.0"
+}
