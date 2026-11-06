@@ -3,9 +3,9 @@ requires = ["hatchling"]
 build-backend = "hatchling.build"
 
 [project]
-name = "smartthings-plus"
+name = "smartthings-pat-refresher"
 version = "1.0.0"
-description = "Home Assistant HACS integration for SmartThings with automated OAuth2 rolling token renewal and local polling"
+description = "Keep SmartThings working for free: automated 24-hour PAT rotator and HACS integration"
 readme = "README.md"
 authors = [{ name = "willyzha" }]
 license = { text = "MIT" }
@@ -15,11 +15,17 @@ dependencies = [
 ]
 
 [project.optional-dependencies]
+rotator = [
+    "playwright>=1.40.0",
+]
 dev = [
     "pytest>=8.0.0",
     "pytest-asyncio>=0.23.0",
     "ruff>=0.3.0",
 ]
+
+[project.scripts]
+smartthings-pat-rotator = "rotator.cli:main"
 
 [tool.pytest.ini_options]
 testpaths = ["tests"]
