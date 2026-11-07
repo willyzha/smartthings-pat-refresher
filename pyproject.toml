@@ -33,6 +33,9 @@ asyncio_mode = "auto"
 asyncio_default_fixture_loop_scope = "function"
 pythonpath = ["."]
 
+[tool.hatch.build.targets.wheel]
+packages = ["rotator"]
+
 [tool.ruff]
 line-length = 100
 target-version = "py312"
