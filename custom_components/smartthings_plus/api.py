@@ -1,28 +1,24 @@
-"""SmartThings REST and OAuth2 API client."""
+"""SmartThings REST API client powered by the local PAT Rotator."""
 
 from __future__ import annotations
 
-import base64
+import asyncio
 import logging
 import time
 from typing import Any, Callable
-from urllib.parse import urlencode
 
 import aiohttp
 
 from .const import (
-    DEFAULT_SCOPES,
     DEFAULT_TOKEN_REFRESH_LEEWAY,
     SMARTTHINGS_API_BASE,
-    SMARTTHINGS_OAUTH_AUTHORIZE_URL,
-    SMARTTHINGS_OAUTH_TOKEN_URL,
 )
 
 _LOGGER = logging.getLogger(__name__)
 
 
 class SmartThingsAuthError(Exception):
-    """Authentication or token refresh failure."""
+    """Authentication or token retrieval failure."""
 
 
 class SmartThingsApiError(Exception):
@@ -30,151 +26,67 @@ class SmartThingsApiError(Exception):
 
 
 class SmartThingsApiClient:
-    """Client for interacting with SmartThings OAuth2 and REST APIs."""
+    """Client for querying SmartThings REST API using auto-rotated PATs."""
 
     def __init__(
         self,
         session: aiohttp.ClientSession,
-        client_id: str,
-        client_secret: str,
+        rotator_url: str,
         access_token: str | None = None,
-        refresh_token: str | None = None,
         expires_at: float = 0.0,
-        on_token_refreshed: Callable[[str, str, float], Any] | None = None,
+        on_token_refreshed: Callable[[str, float], Any] | None = None,
     ) -> None:
         """Initialize API client."""
         self._session = session
-        self.client_id = client_id
-        self.client_secret = client_secret
+        self.rotator_url = rotator_url.rstrip("/")
         self.access_token = access_token
-        self.refresh_token = refresh_token
         self.expires_at = expires_at
         self.on_token_refreshed = on_token_refreshed
 
-    @staticmethod
-    def build_authorization_url(
-        client_id: str,
-        redirect_uri: str,
-        state: str = "smartthings_plus",
-        scopes: list[str] | None = None,
-    ) -> str:
-        """Construct OAuth authorization URL."""
-        if scopes is None:
-            scopes = DEFAULT_SCOPES
-        params = {
-            "client_id": client_id,
-            "response_type": "code",
-            "redirect_uri": redirect_uri,
-            "scope": " ".join(scopes),
-            "state": state,
-        }
-        return f"{SMARTTHINGS_OAUTH_AUTHORIZE_URL}?{urlencode(params)}"
+    async def async_fetch_token_from_rotator(self) -> dict[str, Any]:
+        """Fetch the active Personal Access Token from the companion rotator service."""
+        url = f"{self.rotator_url}/token"
+        _LOGGER.debug("Fetching fresh SmartThings PAT from rotator at %s...", url)
+        try:
+            async with self._session.get(url, timeout=aiohttp.ClientTimeout(total=15)) as resp:
+                if resp.status == 404:
+                    raise SmartThingsAuthError(
+                        "Rotator server has no active token. Run 'smartthings-pat-rotator setup'."
+                    )
+                if resp.status != 200:
+                    err_text = await resp.text()
+                    raise SmartThingsAuthError(
+                        f"Failed to fetch token from rotator ({resp.status}): {err_text}"
+                    )
 
-    def _basic_auth_header(self) -> str:
-        """Construct Basic Auth header for token endpoint."""
-        creds = f"{self.client_id}:{self.client_secret}".encode()
-        return f"Basic {base64.b64encode(creds).decode()}"
+                payload = await resp.json()
+                token = payload.get("token")
+                if not token:
+                    raise SmartThingsAuthError("Rotator returned payload without a valid token.")
 
-    async def async_exchange_auth_code(
-        self,
-        code: str,
-        redirect_uri: str,
-    ) -> dict[str, Any]:
-        """Exchange authorization code for initial access and refresh tokens."""
-        headers = {
-            "Content-Type": "application/x-www-form-urlencoded",
-            "Authorization": self._basic_auth_header(),
-            "Accept": "application/json",
-        }
-        data = {
-            "grant_type": "authorization_code",
-            "code": code,
-            "redirect_uri": redirect_uri,
-            "client_id": self.client_id,
-        }
+                self.access_token = token
+                self.expires_at = payload.get("expires_at", time.time() + 86400)
 
-        async with self._session.post(
-            SMARTTHINGS_OAUTH_TOKEN_URL,
-            headers=headers,
-            data=data,
-        ) as resp:
-            if resp.status != 200:
-                err_text = await resp.text()
-                _LOGGER.error("Token exchange failed (%s): %s", resp.status, err_text)
-                raise SmartThingsAuthError(
-                    f"OAuth code exchange failed ({resp.status}): {err_text}"
+                _LOGGER.info(
+                    "Retrieved active SmartThings PAT. Valid for ~%.1f hours.",
+                    (self.expires_at - time.time()) / 3600,
                 )
 
-            payload = await resp.json()
-            self._apply_token_response(payload)
-            return payload
+                if self.on_token_refreshed:
+                    cb_result = self.on_token_refreshed(self.access_token, self.expires_at)
+                    if hasattr(cb_result, "__await__"):
+                        asyncio.create_task(cb_result)
 
-    async def async_refresh_token(self) -> dict[str, Any]:
-        """Execute rolling token refresh using the single-use refresh token."""
-        if not self.refresh_token:
-            raise SmartThingsAuthError("No refresh token available to renew access.")
-
-        headers = {
-            "Content-Type": "application/x-www-form-urlencoded",
-            "Authorization": self._basic_auth_header(),
-            "Accept": "application/json",
-        }
-        data = {
-            "grant_type": "refresh_token",
-            "refresh_token": self.refresh_token,
-            "client_id": self.client_id,
-        }
-
-        _LOGGER.debug("Requesting rolling refresh token from SmartThings...")
-        async with self._session.post(
-            SMARTTHINGS_OAUTH_TOKEN_URL,
-            headers=headers,
-            data=data,
-        ) as resp:
-            if resp.status != 200:
-                err_text = await resp.text()
-                _LOGGER.error("Token refresh failed (%s): %s", resp.status, err_text)
-                raise SmartThingsAuthError(f"Token refresh failed ({resp.status}): {err_text}")
-
-            payload = await resp.json()
-            self._apply_token_response(payload)
-            _LOGGER.info(
-                "SmartThings OAuth token refreshed successfully. Next expiry in ~%.1f hours.",
-                (self.expires_at - time.time()) / 3600,
-            )
-            return payload
-
-    def _apply_token_response(self, payload: dict[str, Any]) -> None:
-        """Store returned tokens and compute expiration."""
-        self.access_token = payload.get("access_token")
-        # SmartThings refresh tokens are single-use; a new one is returned each refresh
-        new_refresh = payload.get("refresh_token")
-        if new_refresh:
-            self.refresh_token = new_refresh
-
-        expires_in = int(payload.get("expires_in", 86400))
-        self.expires_at = time.time() + expires_in
-
-        if self.on_token_refreshed:
-            cb_result = self.on_token_refreshed(
-                self.access_token,
-                self.refresh_token,
-                self.expires_at,
-            )
-            if hasattr(cb_result, "__await__"):
-                import asyncio
-                asyncio.create_task(cb_result)
+                return payload
+        except aiohttp.ClientError as err:
+            raise SmartThingsAuthError(f"Could not connect to PAT rotator at {url}: {err}") from err
 
     async def async_ensure_token_valid(self) -> None:
-        """Verify token expiration and refresh ahead of time."""
+        """Verify token expiration and refresh from rotator ahead of time."""
         now = time.time()
-        # Refresh if token has expired or is expiring within leeway window (e.g. 2 hours)
-        if now + DEFAULT_TOKEN_REFRESH_LEEWAY >= self.expires_at:
-            _LOGGER.info(
-                "Token close to expiration or expired (%.1fs remaining). Renewing...",
-                self.expires_at - now,
-            )
-            await self.async_refresh_token()
+        if not self.access_token or now + DEFAULT_TOKEN_REFRESH_LEEWAY >= self.expires_at:
+            _LOGGER.info("Token missing or near expiration. Querying rotator for fresh token...")
+            await self.async_fetch_token_from_rotator()
 
     async def _request(
         self,
@@ -204,9 +116,9 @@ class SmartThingsApiClient:
         ) as resp:
             if resp.status == 401 and retry_on_auth_err:
                 _LOGGER.warning(
-                    "Received 401 Unauthorized from SmartThings. Forcing token refresh..."
+                    "Received 401 Unauthorized from SmartThings. Re-fetching token from rotator..."
                 )
-                await self.async_refresh_token()
+                await self.async_fetch_token_from_rotator()
                 return await self._request(
                     method,
                     endpoint,

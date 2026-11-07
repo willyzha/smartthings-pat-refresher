@@ -2,83 +2,99 @@
 
 from __future__ import annotations
 
-import time
 from unittest.mock import AsyncMock, MagicMock, patch
 
 import pytest
 
+from custom_components.smartthings_plus.api import SmartThingsAuthError
 from custom_components.smartthings_plus.config_flow import SmartThingsPlusConfigFlow
 from custom_components.smartthings_plus.const import (
     CONF_ACCESS_TOKEN,
-    CONF_AUTH_CODE,
-    CONF_CLIENT_ID,
-    CONF_CLIENT_SECRET,
-    CONF_REDIRECT_URI,
-    CONF_REFRESH_TOKEN,
-    DEFAULT_REDIRECT_URI,
+    CONF_ROTATOR_URL,
+    DEFAULT_ROTATOR_URL,
 )
-from tests.conftest import (
-    MOCK_ACCESS_TOKEN,
-    MOCK_CLIENT_ID,
-    MOCK_CLIENT_SECRET,
-    MOCK_REFRESH_TOKEN,
-)
-
-
-def test_extract_code_variations() -> None:
-    """Test extracting authorization code from pure code or full redirect URLs."""
-    # Plain code
-    assert SmartThingsPlusConfigFlow._extract_code("my_secret_code_123") == "my_secret_code_123"
-
-    # Full localhost redirect URL
-    url = "https://localhost/?code=auth_code_xyz&state=smartthings_plus"
-    assert SmartThingsPlusConfigFlow._extract_code(url) == "auth_code_xyz"
-
-    # URL with additional parameters
-    url2 = "http://192.168.1.100:8123/auth/external/callback?code=code_abc999&scope=r:devices:*"
-    assert SmartThingsPlusConfigFlow._extract_code(url2) == "code_abc999"
+from tests.conftest import MOCK_ACCESS_TOKEN
 
 
 @pytest.mark.asyncio
-async def test_config_flow_full_step_flow() -> None:
-    """Test full interactive config flow from Step 1 to entry creation."""
+async def test_config_flow_user_form() -> None:
+    """Test initial user step displays the rotator URL input form."""
     flow = SmartThingsPlusConfigFlow()
     flow.hass = MagicMock()
 
-    # Step 1: User enters Client ID & Secret
-    result = await flow.async_step_user(
-        {
-            CONF_CLIENT_ID: MOCK_CLIENT_ID,
-            CONF_CLIENT_SECRET: MOCK_CLIENT_SECRET,
-            CONF_REDIRECT_URI: DEFAULT_REDIRECT_URI,
-        }
-    )
+    result = await flow.async_step_user()
     assert result["type"] == "form"
-    assert result["step_id"] == "auth_code"
+    assert result["step_id"] == "user"
 
-    # Step 2: User pastes redirect URL / code
+
+@pytest.mark.asyncio
+async def test_config_flow_success() -> None:
+    """Test successful connection creates config entry."""
+    flow = SmartThingsPlusConfigFlow()
+    flow.hass = MagicMock()
+
     with patch(
         "custom_components.smartthings_plus.config_flow.SmartThingsApiClient"
     ) as mock_client_cls:
         mock_instance = MagicMock()
-        mock_instance.async_exchange_auth_code = AsyncMock(
-            return_value={
-                "access_token": MOCK_ACCESS_TOKEN,
-                "refresh_token": MOCK_REFRESH_TOKEN,
-            }
+        mock_instance.async_fetch_token_from_rotator = AsyncMock(
+            return_value={"token": MOCK_ACCESS_TOKEN}
         )
-        mock_instance.expires_at = time.time() + 86400
+        mock_instance.access_token = MOCK_ACCESS_TOKEN
         mock_instance.async_get_devices = AsyncMock(return_value=[])
         mock_client_cls.return_value = mock_instance
 
-        result2 = await flow.async_step_auth_code(
-            {CONF_AUTH_CODE: "https://localhost/?code=my_auth_code"}
+        result = await flow.async_step_user(
+            {CONF_ROTATOR_URL: DEFAULT_ROTATOR_URL}
         )
 
-        assert result2["type"] == "create_entry"
-        assert result2["title"] == "SmartThings Plus"
-        data = result2["data"]
-        assert data[CONF_CLIENT_ID] == MOCK_CLIENT_ID
-        assert data[CONF_CLIENT_SECRET] == MOCK_CLIENT_SECRET
-        assert data[CONF_ACCESS_TOKEN] == MOCK_ACCESS_TOKEN
-        assert data[CONF_REFRESH_TOKEN] == MOCK_REFRESH_TOKEN
+        assert result["type"] == "create_entry"
+        assert result["title"] == "SmartThings Plus"
+        assert result["data"][CONF_ROTATOR_URL] == DEFAULT_ROTATOR_URL
+        assert result["data"][CONF_ACCESS_TOKEN] == MOCK_ACCESS_TOKEN
+
+
+@pytest.mark.asyncio
+async def test_config_flow_no_token() -> None:
+    """Test rotator reachable but no active token displays no_token error."""
+    flow = SmartThingsPlusConfigFlow()
+    flow.hass = MagicMock()
+
+    with patch(
+        "custom_components.smartthings_plus.config_flow.SmartThingsApiClient"
+    ) as mock_client_cls:
+        mock_instance = MagicMock()
+        mock_instance.async_fetch_token_from_rotator = AsyncMock(
+            side_effect=SmartThingsAuthError("no active token")
+        )
+        mock_client_cls.return_value = mock_instance
+
+        result = await flow.async_step_user(
+            {CONF_ROTATOR_URL: DEFAULT_ROTATOR_URL}
+        )
+
+        assert result["type"] == "form"
+        assert result["errors"]["base"] == "no_token"
+
+
+@pytest.mark.asyncio
+async def test_config_flow_cannot_connect() -> None:
+    """Test connection failure displays cannot_connect error."""
+    flow = SmartThingsPlusConfigFlow()
+    flow.hass = MagicMock()
+
+    with patch(
+        "custom_components.smartthings_plus.config_flow.SmartThingsApiClient"
+    ) as mock_client_cls:
+        mock_instance = MagicMock()
+        mock_instance.async_fetch_token_from_rotator = AsyncMock(
+            side_effect=SmartThingsAuthError("Connection refused")
+        )
+        mock_client_cls.return_value = mock_instance
+
+        result = await flow.async_step_user(
+            {CONF_ROTATOR_URL: "http://non-existent-host:8765"}
+        )
+
+        assert result["type"] == "form"
+        assert result["errors"]["base"] == "cannot_connect"

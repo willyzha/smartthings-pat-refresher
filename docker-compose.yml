@@ -1,0 +1,23 @@
+services:
+  smartthings-pat-rotator:
+    build: .
+    image: smartthings-pat-rotator:latest
+    container_name: smartthings-pat-rotator
+    restart: unless-stopped
+    ports:
+      - "8765:8765"
+    volumes:
+      # Mount the data folder containing the 1-time authenticated session
+      - ./data:/app/data
+    environment:
+      - PYTHONUNBUFFERED=1
+
+  # Home Assistant example (if running together on the same Docker network):
+  # homeassistant:
+  #   image: ghcr.io/home-assistant/home-assistant:stable
+  #   container_name: homeassistant
+  #   restart: unless-stopped
+  #   volumes:
+  #     - /path/to/ha/config:/config
+  #   ports:
+  #     - "8123:8123"

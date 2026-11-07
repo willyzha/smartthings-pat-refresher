@@ -38,10 +38,7 @@ except ImportError:
 from .api import SmartThingsApiClient
 from .const import (
     CONF_ACCESS_TOKEN,
-    CONF_CLIENT_ID,
-    CONF_CLIENT_SECRET,
-    CONF_EXPIRES_AT,
-    CONF_REFRESH_TOKEN,
+    CONF_ROTATOR_URL,
     CONF_SCAN_INTERVAL,
     DEFAULT_SCAN_INTERVAL,
     DOMAIN,
@@ -55,39 +52,26 @@ _LOGGER = logging.getLogger(__name__)
 async def async_setup_entry(hass: HomeAssistant, entry: ConfigEntry) -> bool:
     """Set up SmartThings Plus from a config entry."""
     session = async_get_clientsession(hass)
-
-    client_id = entry.data[CONF_CLIENT_ID]
-    client_secret = entry.data[CONF_CLIENT_SECRET]
+    rotator_url = entry.data[CONF_ROTATOR_URL]
     access_token = entry.data.get(CONF_ACCESS_TOKEN)
-    refresh_token = entry.data.get(CONF_REFRESH_TOKEN)
-    expires_at = entry.data.get(CONF_EXPIRES_AT, 0.0)
 
-    # Callback triggered whenever the rolling refresh token rotates
-    async def async_on_token_refreshed(
-        new_access_token: str,
-        new_refresh_token: str,
-        new_expires_at: float,
-    ) -> None:
-        _LOGGER.info("Updating Home Assistant config entry with newly refreshed OAuth token...")
+    # Callback triggered whenever a renewed PAT is retrieved
+    async def async_on_token_refreshed(new_access_token: str, new_expires_at: float) -> None:
+        _LOGGER.debug("Persisting newly rotated SmartThings PAT into Home Assistant config...")
         updated_data = {
             **entry.data,
             CONF_ACCESS_TOKEN: new_access_token,
-            CONF_REFRESH_TOKEN: new_refresh_token,
-            CONF_EXPIRES_AT: new_expires_at,
         }
         hass.config_entries.async_update_entry(entry, data=updated_data)
 
     client = SmartThingsApiClient(
         session=session,
-        client_id=client_id,
-        client_secret=client_secret,
+        rotator_url=rotator_url,
         access_token=access_token,
-        refresh_token=refresh_token,
-        expires_at=expires_at,
         on_token_refreshed=async_on_token_refreshed,
     )
 
-    # Ensure valid token upon startup
+    # Verify / retrieve token upon startup
     await client.async_ensure_token_valid()
 
     scan_interval = entry.data.get(CONF_SCAN_INTERVAL, DEFAULT_SCAN_INTERVAL)
@@ -97,7 +81,6 @@ async def async_setup_entry(hass: HomeAssistant, entry: ConfigEntry) -> bool:
         update_interval=timedelta(seconds=scan_interval),
     )
 
-    # Initial data refresh
     if hasattr(coordinator, "async_config_entry_first_refresh"):
         await coordinator.async_config_entry_first_refresh()
     else:

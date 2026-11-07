@@ -3,27 +3,19 @@
     "step": {
       "user": {
         "title": "SmartThings Plus Setup",
-        "description": "Enter your SmartThings Developer App Client ID and Client Secret.",
+        "description": "Enter the URL of your SmartThings PAT Rotator service. The integration will automatically fetch the active 24h Personal Access Token and keep it continuously renewed.",
         "data": {
-          "client_id": "Client ID",
-          "client_secret": "Client Secret",
-          "redirect_uri": "Redirect URI (e.g. https://localhost)"
-        }
-      },
-      "auth_code": {
-        "title": "Authorize with SmartThings",
-        "description": "1. [Click here to Authorize SmartThings]({auth_url})\n2. Sign in to your Samsung account and click **Authorize**.\n3. Copy the `code` parameter from the redirected URL (or copy the entire redirect URL) and paste it below.",
-        "data": {
-          "auth_code": "Authorization Code (or full redirect URL)"
+          "rotator_url": "SmartThings PAT Rotator URL (e.g. http://smartthings-pat-rotator:8765 or http://192.168.1.50:8765)"
         }
       }
     },
     "error": {
-      "invalid_auth": "Invalid authorization code or credentials.",
-      "cannot_connect": "Failed to connect to SmartThings API."
+      "cannot_connect": "Could not connect to the PAT Rotator at the specified URL. Please ensure the container/service is running.",
+      "no_token": "The Rotator server is reachable, but no active PAT was found. Please run 'smartthings-pat-rotator setup' first.",
+      "api_error": "Connected to the Rotator, but SmartThings rejected the token. Please rotate a fresh token."
     },
     "abort": {
-      "already_configured": "Device or account is already configured."
+      "already_configured": "This SmartThings Plus instance is already configured."
     }
   }
 }
