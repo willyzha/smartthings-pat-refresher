@@ -1,0 +1,12 @@
+{
+  "domain": "smartthings_refresher",
+  "name": "SmartThings Refresher",
+  "version": "1.0.0",
+  "codeowners": ["@willyzha"],
+  "config_flow": true,
+  "dependencies": ["smartthings"],
+  "documentation": "https://github.com/willyzha/smartthings-pat-refresher",
+  "integration_type": "hub",
+  "iot_class": "cloud_polling",
+  "requirements": ["pysmartthings>=3.5.0"]
+}

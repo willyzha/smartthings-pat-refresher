@@ -1,0 +1,31 @@
+{
+  "config": {
+    "step": {
+      "user": {
+        "title": "SmartThings Refresher",
+        "description": "Connect to your SmartThings PAT Rotator container to keep 24-hour tokens refreshed automatically without developer fees.",
+        "data": {
+          "rotator_url": "Rotator URL"
+        }
+      }
+    },
+    "error": {
+      "cannot_connect": "Failed to connect to the rotator server. Ensure your smartthings-pat-rotator container is running.",
+      "invalid_token": "The token from the rotator server failed authentication with SmartThings.",
+      "unknown": "Unexpected error occurred."
+    },
+    "abort": {
+      "already_configured": "This SmartThings account is already configured."
+    }
+  },
+  "options": {
+    "step": {
+      "init": {
+        "title": "SmartThings Refresher Options",
+        "data": {
+          "refresh_interval": "Device Status Polling Interval (seconds)"
+        }
+      }
+    }
+  }
+}

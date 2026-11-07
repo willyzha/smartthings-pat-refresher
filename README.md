@@ -89,9 +89,9 @@ The container automatically:
    https://github.com/willyzha/smartthings-pat-refresher
    ```
    Category: **Integration**.
-4. Download **SmartThings Plus** and restart Home Assistant.
+4. Download **SmartThings Refresher** and restart Home Assistant.
 5. Navigate to **Settings** > **Devices & Services** > **Add Integration**.
-6. Search for **SmartThings Plus**.
+6. Search for **SmartThings Refresher**.
 7. Enter the Rotator URL:
    ```text
    http://smartthings-pat-rotator:8765
@@ -99,7 +99,16 @@ The container automatically:
    *(Or `http://<server-ip>:8765` if on different hosts)*.
 8. Click **Submit**! 
 
-Home Assistant will fetch the active token, discover all your devices (switches, lights, sensors, thermostats, locks), and automatically renew the token on every poll without you ever touching a 24-hour token manually again.
+Home Assistant connects to the rotator container, fetches the active token, discovers all your devices across all 19 native Home Assistant platforms, and keeps them continuously refreshed without ever needing a manual token or paying Samsung's developer fee.
+
+---
+
+## Non-Vendored Wrapper Architecture
+
+Unlike integrations that copy or vendor third-party libraries and entity platforms, `smartthings_refresher` is a lightweight wrapper that dynamically binds to Home Assistant's built-in `smartthings` platforms and `pysmartthings`:
+- **Zero Vendored Code**: Delegates entity setup directly to Home Assistant's core platforms (`switch`, `light`, `sensor`, `binary_sensor`, `climate`, `cover`, `fan`, `lock`, `media_player`, `number`, `scene`, `select`, `time`, `update`, `vacuum`, `valve`, `water_heater`).
+- **Always Up-to-Date**: Automatically inherits all official Home Assistant device updates, capability additions, and bugfixes.
+- **Independent Domain**: Runs as domain `smartthings_refresher` so it safely coexists alongside the built-in integration.
 
 ---
 
