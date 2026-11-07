@@ -9,7 +9,7 @@ import sys
 import time
 
 from .browser import SmartThingsBrowserRotator
-from .const import DEFAULT_SERVER_HOST, DEFAULT_SERVER_PORT
+from .const import DEFAULT_COOKIES_FILE, DEFAULT_SERVER_HOST, DEFAULT_SERVER_PORT
 from .server import RotatorServer
 from .storage import TokenStorage
 
@@ -26,7 +26,9 @@ def setup_logging(verbose: bool = False) -> None:
 
 def cmd_setup(args: argparse.Namespace) -> None:
     """Run interactive 1-time browser setup."""
-    rotator = SmartThingsBrowserRotator(session_dir=args.session_dir)
+    rotator = SmartThingsBrowserRotator(
+        session_dir=args.session_dir, cookies_file=args.cookies_file
+    )
     asyncio.run(rotator.async_interactive_setup())
 
 
@@ -36,12 +38,15 @@ def cmd_import_cookies(args: argparse.Namespace) -> None:
     if not cookie_input:
         if args.file:
             from pathlib import Path
+
             cookie_input = Path(args.file).read_text(encoding="utf-8")
         else:
             print("Paste your cookies (JSON or header string) and press Enter followed by Ctrl+D:")
             cookie_input = sys.stdin.read()
 
-    rotator = SmartThingsBrowserRotator(session_dir=args.session_dir)
+    rotator = SmartThingsBrowserRotator(
+        session_dir=args.session_dir, cookies_file=args.cookies_file
+    )
     try:
         asyncio.run(rotator.async_import_cookies(cookie_input))
     except Exception as err:
@@ -52,7 +57,11 @@ def cmd_import_cookies(args: argparse.Namespace) -> None:
 def cmd_rotate(args: argparse.Namespace) -> None:
     """Execute a single one-shot headless rotation."""
     storage = TokenStorage(token_file=args.token_file)
-    rotator = SmartThingsBrowserRotator(session_dir=args.session_dir, storage=storage)
+    rotator = SmartThingsBrowserRotator(
+        session_dir=args.session_dir,
+        cookies_file=args.cookies_file,
+        storage=storage,
+    )
     try:
         token = asyncio.run(rotator.async_rotate(headless=not args.headed))
         print(f"\nSuccessfully rotated PAT: {token}")
@@ -64,7 +73,11 @@ def cmd_rotate(args: argparse.Namespace) -> None:
 def cmd_serve(args: argparse.Namespace) -> None:
     """Start token server, transparent proxy, and background rotation loop."""
     storage = TokenStorage(token_file=args.token_file)
-    rotator = SmartThingsBrowserRotator(session_dir=args.session_dir, storage=storage)
+    rotator = SmartThingsBrowserRotator(
+        session_dir=args.session_dir,
+        cookies_file=args.cookies_file,
+        storage=storage,
+    )
     server = RotatorServer(
         storage=storage,
         rotator=rotator,
@@ -131,6 +144,11 @@ def main() -> None:
         help="Path to browser session directory (default: data/session)",
     )
     parser.add_argument(
+        "--cookies-file",
+        default=str(DEFAULT_COOKIES_FILE),
+        help=f"Path to cookies file (default: {DEFAULT_COOKIES_FILE})",
+    )
+    parser.add_argument(
         "--token-file",
         default="data/smartthings_pat.txt",
         help="Path to output token file (default: data/smartthings_pat.txt)",
@@ -143,7 +161,9 @@ def main() -> None:
     p_setup.set_defaults(func=cmd_setup)
 
     # import-cookies
-    p_import = subparsers.add_parser("import-cookies", help="Import session cookies from regular browser")
+    p_import = subparsers.add_parser(
+        "import-cookies", help="Import session cookies from regular browser"
+    )
     p_import.add_argument("--file", help="Path to cookie JSON file")
     p_import.add_argument("cookies", nargs="?", help="Cookie string or JSON")
     p_import.set_defaults(func=cmd_import_cookies)

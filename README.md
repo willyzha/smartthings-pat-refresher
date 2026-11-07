@@ -33,27 +33,34 @@ flowchart LR
 
 ## 3-Step Setup Guide
 
-### Step 1: One-Time Samsung Login (Desktop)
+### Step 1: One-Time Samsung Authentication
 
-Run the 1-time setup command locally to log in and approve 2FA:
+You can authenticate using either **Option A (Cookie Import - Fastest)** or **Option B (Interactive Browser Login)**:
+
+#### Option A: Cookie Import (Headless / Recommended)
+If your server is headless or running remotely:
+1. Log in to [account.smartthings.com/tokens](https://account.smartthings.com/tokens) in your normal web browser.
+2. Open DevTools (`F12`) > **Network** tab, refresh the page, click the `tokens` request, and copy the `Cookie` header string (or export via Cookie-Editor).
+3. Import the cookies into the rotator:
 ```bash
-# 1. Clone repository
-git clone https://github.com/willyzha/smartthings-pat-refresher.git
-cd smartthings-pat-refresher
+# Save to data/cookies.txt
+mkdir -p data
+echo "YOUR_COOKIES_HERE" > data/cookies.txt
 
-# 2. Install rotator dependencies & Playwright Chromium
-pip install -e ".[rotator]"
-playwright install chromium
+# Or run the CLI command:
+docker compose run --rm smartthings-pat-rotator smartthings-pat-rotator import-cookies "YOUR_COOKIES_HERE"
+```
+The rotator immediately verifies the cookies against Samsung's API and mints your first active PAT in milliseconds!
 
-# 3. Launch the 1-time setup browser
+#### Option B: Interactive Browser Setup (Desktop)
+If you have a local desktop display:
+```bash
+# Launch interactive browser
 smartthings-pat-rotator setup
 ```
-
-1. Chromium will open to Samsung's login page.
-2. Sign in with your Samsung Account.
-3. Complete 2-Step Verification (SMS or tap approve on your Galaxy device) and check **"Remember this device"**.
-4. Once you reach the Personal Access Tokens dashboard, close the browser.
-5. All session cookies and device trust tokens are safely stored in `./data/session`.
+1. Chromium opens to Samsung's login page.
+2. Sign in with your Samsung Account and complete 2FA.
+3. Once you see the Personal Access Tokens dashboard, close the browser.
 
 ---
 
@@ -61,37 +68,15 @@ smartthings-pat-rotator setup
 
 Deploy the rotator companion container next to your Home Assistant:
 
-```yaml
-services:
-  smartthings-pat-rotator:
-    image: smartthings-pat-rotator:latest
-    build: .
-    container_name: smartthings-pat-rotator
-    restart: unless-stopped
-    ports:
-      - "8765:8765"
-    volumes:
-      # Mount the data folder containing your 1-time authenticated session
-      - ./data:/app/data
-    environment:
-      - PYTHONUNBUFFERED=1
-
-  # Home Assistant (example on the same Docker network):
-  # homeassistant:
-  #   image: ghcr.io/home-assistant/home-assistant:stable
-  #   container_name: homeassistant
-  #   restart: unless-stopped
-  #   ports:
-  #     - "8123:8123"
-  #   volumes:
-  #     - /path/to/ha/config:/config
-```
-
-Start the container:
 ```bash
 docker compose up -d
 ```
-The rotator runs in the background, spins up headless Chromium for ~15 seconds once every 20 hours to auto-mint a fresh 24h PAT, cleans up expired tokens, and serves the active token at `http://smartthings-pat-rotator:8765/token`.
+
+The container automatically:
+- Hosts the active PAT at `http://localhost:8765/token` (and `http://localhost:8765/health`).
+- Serves a transparent reverse proxy at `http://localhost:8765/v1/...` that auto-injects bearer authentication.
+- Automatically checks every 10 minutes and rotates the PAT via direct REST API before it reaches 20 hours of age.
+- Cleans up older automated PATs on SmartThings cloud.
 
 ---
 

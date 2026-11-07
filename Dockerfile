@@ -7,7 +7,7 @@ COPY pyproject.toml README.md ./
 COPY rotator/ ./rotator/
 
 # Install rotator dependencies
-RUN pip install --no-cache-dir ".[rotator]"
+RUN pip install --no-cache-dir ".[rotator]" && playwright install chromium
 
 # Expose HTTP token server and proxy port
 EXPOSE 8765

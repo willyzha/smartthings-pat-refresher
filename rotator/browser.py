@@ -1,4 +1,4 @@
-"""Playwright browser automation for SmartThings Personal Access Tokens."""
+"""PAT Rotation engine with direct REST and Playwright browser automation fallback."""
 
 from __future__ import annotations
 
@@ -7,7 +7,18 @@ import time
 from pathlib import Path
 from typing import Any
 
-from .const import DEFAULT_SESSION_DIR, DEFAULT_TOKENS_URL, TOKEN_PREFIX
+from .const import (
+    DEFAULT_COOKIES_FILE,
+    DEFAULT_SESSION_DIR,
+    DEFAULT_TOKENS_URL,
+    TOKEN_PREFIX,
+)
+from .rest import (
+    RestAuthExpiredError,
+    RestRotatorError,
+    SmartThingsRestClient,
+    extract_cookies_and_xsrf,
+)
 from .storage import TokenStorage
 
 _LOGGER = logging.getLogger(__name__)
@@ -22,16 +33,21 @@ class SessionExpiredError(RotatorError):
 
 
 class SmartThingsBrowserRotator:
-    """Automates token creation on account.smartthings.com/tokens via Playwright."""
+    """Automates SmartThings PAT rotation via fast REST API with Playwright browser fallback."""
 
     def __init__(
         self,
         session_dir: Path | str = DEFAULT_SESSION_DIR,
+        cookies_file: Path | str = DEFAULT_COOKIES_FILE,
         storage: TokenStorage | None = None,
     ) -> None:
-        """Initialize browser rotator."""
+        """Initialize rotator."""
         self.session_dir = Path(session_dir)
+        self.cookies_file = Path(cookies_file)
         self.storage = storage or TokenStorage()
+        self.rest_client = SmartThingsRestClient(
+            storage=self.storage, cookies_file=self.cookies_file
+        )
 
     async def async_interactive_setup(self) -> None:
         """Run headed browser for initial Samsung login and 2FA approval."""
@@ -59,56 +75,61 @@ class SmartThingsBrowserRotator:
             page = context.pages[0] if context.pages else await context.new_page()
             await page.goto(DEFAULT_TOKENS_URL)
 
-            # Wait for user to complete login and navigate to tokens page
             print("Waiting for authentication to complete...")
             try:
-                # Wait until URL is account.smartthings.com/tokens and page has loaded
                 await page.wait_for_url("**/tokens**", timeout=300000)  # 5 minutes
                 await page.wait_for_load_state("networkidle", timeout=30000)
                 print("\n[SUCCESS] Successfully authenticated with SmartThings!")
+
+                # Extract cookies from browser context and save to cookies.txt
+                cookies = await context.cookies(["https://account.smartthings.com"])
+                if cookies:
+                    cookie_header = "; ".join(f"{c['name']}={c['value']}" for c in cookies)
+                    self.rest_client.save_cookies(cookie_header)
+                    _LOGGER.info(
+                        "Exported %d cookies from browser to %s",
+                        len(cookies),
+                        self.cookies_file,
+                    )
+
             except Exception as err:
                 print(f"\n[INFO] Window closed or timed out: {err}")
             finally:
                 await context.close()
 
     async def async_import_cookies(self, cookie_data: str) -> None:
-        """Import cookies from JSON or header string and verify session."""
-        import json
-        from playwright.async_api import async_playwright
-
-        self.session_dir.mkdir(parents=True, exist_ok=True)
+        """Import cookies from string or file, test via REST, and mint first PAT."""
         raw = cookie_data.strip()
-
-        # Check if cookie_data is a file path
-        if Path(raw).is_file():
+        if len(raw) < 260 and Path(raw).is_file():
             raw = Path(raw).read_text(encoding="utf-8").strip()
 
-        cookies_to_add: list[dict[str, Any]] = []
+        # Parse & validate format
+        cookie_header, _ = extract_cookies_and_xsrf(raw)
 
-        # Try parsing JSON format (e.g. Cookie-Editor export)
-        if raw.startswith("[") or raw.startswith("{"):
-            try:
-                parsed = json.loads(raw)
-                cookie_list = parsed if isinstance(parsed, list) else [parsed]
-                for c in cookie_list:
-                    cookie_entry = {
-                        "name": c["name"],
-                        "value": str(c["value"]),
-                        "domain": c.get("domain", ".smartthings.com"),
-                        "path": c.get("path", "/"),
-                    }
-                    if "secure" in c:
-                        cookie_entry["secure"] = bool(c["secure"])
-                    if "httpOnly" in c:
-                        cookie_entry["httpOnly"] = bool(c["httpOnly"])
-                    if "sameSite" in c and c["sameSite"] in ("Strict", "Lax", "None"):
-                        cookie_entry["sameSite"] = c["sameSite"]
-                    cookies_to_add.append(cookie_entry)
-            except Exception as err:
-                raise RotatorError(f"Could not parse cookie JSON: {err}") from err
-        else:
-            # Parse Cookie header string: "key1=val1; key2=val2"
-            for item in raw.split(";"):
+        # Save to cookies file
+        self.rest_client.save_cookies(cookie_header)
+        _LOGGER.info("Saved cookies to %s", self.cookies_file)
+
+        # Test immediately via REST API
+        try:
+            print("Verifying session with SmartThings API...")
+            new_token = await self.rest_client.async_rotate()
+            masked = f"{new_token[:8]}...{new_token[-4:]}"
+            print(f"\n[SUCCESS] Session verified! Minted active PAT: {masked}")
+        except RestAuthExpiredError as err:
+            raise SessionExpiredError(
+                "Provided cookies are invalid or expired on Samsung SmartThings."
+            ) from err
+        except RestRotatorError as err:
+            raise RotatorError(f"SmartThings API error: {err}") from err
+
+        # Also populate Playwright browser context if possible
+        try:
+            from playwright.async_api import async_playwright
+
+            self.session_dir.mkdir(parents=True, exist_ok=True)
+            cookies_to_add: list[dict[str, Any]] = []
+            for item in cookie_header.split(";"):
                 if "=" in item:
                     k, v = item.strip().split("=", 1)
                     if k.strip():
@@ -116,53 +137,58 @@ class SmartThingsBrowserRotator:
                             {
                                 "name": k.strip(),
                                 "value": v.strip(),
-                                "domain": ".smartthings.com",
+                                "domain": "account.smartthings.com",
                                 "path": "/",
                             }
                         )
 
-        if not cookies_to_add:
-            raise RotatorError("No valid cookies found in input.")
-
-        _LOGGER.info("Importing %d cookies into session profile...", len(cookies_to_add))
-
-        async with async_playwright() as p:
-            context = await p.chromium.launch_persistent_context(
-                user_data_dir=str(self.session_dir),
-                headless=True,
-                args=["--no-sandbox", "--disable-dev-shm-usage"],
-            )
-            try:
+            async with async_playwright() as p:
+                context = await p.chromium.launch_persistent_context(
+                    user_data_dir=str(self.session_dir),
+                    headless=True,
+                    args=["--no-sandbox", "--disable-dev-shm-usage"],
+                )
                 await context.add_cookies(cookies_to_add)
-                page = context.pages[0] if context.pages else await context.new_page()
-                await page.goto(DEFAULT_TOKENS_URL, timeout=30000)
-                await page.wait_for_load_state("networkidle", timeout=15000)
-
-                if "signin" in page.url or "login" in page.url:
-                    raise SessionExpiredError(
-                        "Cookies imported, but Samsung redirected to login page. "
-                        "Make sure you copied all cookies while logged into account.smartthings.com/tokens."
-                    )
-
-                print("\n[SUCCESS] Cookies successfully imported and session verified on SmartThings!")
-            finally:
                 await context.close()
+        except Exception as err:
+            _LOGGER.debug("Playwright cookie cache sync skipped: %s", err)
 
     async def async_rotate(
         self,
         headless: bool = True,
         token_name: str | None = None,
     ) -> str:
-        """Execute headless rotation using saved persistent session."""
-        from playwright.async_api import async_playwright
+        """Rotate PAT. Uses fast REST API first, falling back to Playwright if needed."""
+        name = token_name or f"{TOKEN_PREFIX}{int(time.time())}"
 
+        # 1. Primary engine: Direct REST API (instantaneous, lightweight)
+        if self.cookies_file.is_file():
+            try:
+                _LOGGER.info("Attempting REST API rotation...")
+                return await self.rest_client.async_rotate(token_name=name)
+            except RestAuthExpiredError as err:
+                _LOGGER.warning("REST session cookies expired: %s. Falling back to browser...", err)
+            except Exception as err:
+                _LOGGER.warning("REST rotation error: %s. Falling back to browser...", err)
+
+        # 2. Secondary engine: Headless browser automation via Playwright
         if not self.session_dir.exists():
             raise SessionExpiredError(
-                "No session found. Please run 'smartthings-pat-rotator setup' first to log in."
+                "No session found. Please import cookies or run 'smartthings-pat-rotator setup'."
             )
 
+        _LOGGER.info("Starting headless Playwright PAT rotation for '%s'...", name)
+        return await self._async_playwright_rotate(headless=headless, token_name=name)
+
+    async def _async_playwright_rotate(
+        self,
+        headless: bool = True,
+        token_name: str | None = None,
+    ) -> str:
+        """Execute Playwright browser automation fallback."""
+        from playwright.async_api import async_playwright
+
         name = token_name or f"{TOKEN_PREFIX}{int(time.time())}"
-        _LOGGER.info("Starting headless PAT rotation for '%s'...", name)
 
         async with async_playwright() as p:
             context = await p.chromium.launch_persistent_context(
@@ -176,20 +202,17 @@ class SmartThingsBrowserRotator:
                 await page.goto(DEFAULT_TOKENS_URL, timeout=60000)
                 await page.wait_for_load_state("networkidle", timeout=30000)
 
-                # Check if redirected to login / SSO
                 if "signin" in page.url or "login" in page.url:
                     raise SessionExpiredError(
-                        "Samsung login session expired. Please run 'smartthings-pat-rotator setup'."
+                        "Samsung login session expired. Please re-authenticate or import cookies."
                     )
 
-                # Click "Generate new token" button
                 generate_btn = page.locator(
                     "button:has-text('Generate new token'), a:has-text('Generate new token')"
                 ).first
                 await generate_btn.wait_for(state="visible", timeout=15000)
                 await generate_btn.click()
 
-                # Fill Token Name input
                 token_input = page.locator(
                     "input[name='tokenName'], "
                     "input[placeholder*='Token Name'], "
@@ -198,7 +221,6 @@ class SmartThingsBrowserRotator:
                 await token_input.wait_for(state="visible", timeout=10000)
                 await token_input.fill(name)
 
-                # Select all scopes (e.g. click "Authorized Scopes" checkboxes)
                 checkboxes = page.locator("input[type='checkbox']")
                 count = await checkboxes.count()
                 for i in range(count):
@@ -206,7 +228,6 @@ class SmartThingsBrowserRotator:
                     if not await cb.is_checked():
                         await cb.check()
 
-                # Submit creation form
                 submit_btn = page.locator(
                     "button[type='submit'], "
                     "button:has-text('Generate token'), "
@@ -214,8 +235,6 @@ class SmartThingsBrowserRotator:
                 ).first
                 await submit_btn.click()
 
-                # Wait for token output display
-                # SmartThings typically displays the token in an input with a copy button
                 token_display = page.locator(
                     "input[readonly], code, pre, .token-value, input[value*='-']"
                 ).first
@@ -231,35 +250,18 @@ class SmartThingsBrowserRotator:
                 if not token or len(token) < 20:
                     raise RotatorError(f"Unexpected token value extracted: '{token}'")
 
-                # Save new token
                 self.storage.save_token(token=token, token_name=name)
 
-                # Best effort: clean up older automated tokens
-                await self._cleanup_old_tokens(page)
+                # Export fresh cookies if available
+                cookies = await context.cookies(["https://account.smartthings.com"])
+                if cookies:
+                    cookie_header = "; ".join(f"{c['name']}={c['value']}" for c in cookies)
+                    self.rest_client.save_cookies(cookie_header)
 
                 return token
 
             finally:
                 await context.close()
 
-    async def _cleanup_old_tokens(self, page: Any) -> None:
-        """Best effort removal of previously expired auto-generated tokens."""
-        try:
-            # Look for tokens matching TOKEN_PREFIX
-            del_buttons = page.locator(
-                f"tr:has-text('{TOKEN_PREFIX}') button:has-text('Delete')"
-            )
-            count = await del_buttons.count()
-            # Leave the latest one, delete older ones
-            for i in range(max(0, count - 1)):
-                btn = del_buttons.nth(i)
-                if await btn.is_visible():
-                    await btn.click()
-                    # Confirm if dialog appears
-                    confirm_btn = page.locator(
-                        "button:has-text('Confirm'), button:has-text('OK')"
-                    ).first
-                    if await confirm_btn.is_visible():
-                        await confirm_btn.click()
-        except Exception as err:
-            _LOGGER.debug("Non-critical cleanup warning: %s", err)
+
+SmartThingsRotator = SmartThingsBrowserRotator

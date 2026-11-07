@@ -40,6 +40,8 @@ htmlcov/
 *.token
 tokens.json
 browser_state.json
+cookies.txt
+data/
 
 # IDE
 .vscode/
