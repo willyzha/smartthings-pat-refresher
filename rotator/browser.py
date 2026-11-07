@@ -10,6 +10,7 @@ from typing import Any
 from .const import (
     DEFAULT_COOKIES_FILE,
     DEFAULT_SESSION_DIR,
+    DEFAULT_STORAGE_STATE_FILE,
     DEFAULT_TOKENS_URL,
     TOKEN_PREFIX,
 )
@@ -39,11 +40,13 @@ class SmartThingsBrowserRotator:
         self,
         session_dir: Path | str = DEFAULT_SESSION_DIR,
         cookies_file: Path | str = DEFAULT_COOKIES_FILE,
+        storage_state_file: Path | str = DEFAULT_STORAGE_STATE_FILE,
         storage: TokenStorage | None = None,
     ) -> None:
         """Initialize rotator."""
         self.session_dir = Path(session_dir)
         self.cookies_file = Path(cookies_file)
+        self.storage_state_file = Path(storage_state_file)
         self.storage = storage or TokenStorage()
         self.rest_client = SmartThingsRestClient(
             storage=self.storage, cookies_file=self.cookies_file
@@ -81,7 +84,13 @@ class SmartThingsBrowserRotator:
                 await page.wait_for_load_state("networkidle", timeout=30000)
                 print("\n[SUCCESS] Successfully authenticated with SmartThings!")
 
-                # Extract cookies from browser context and save to cookies.txt
+                # Extract full storage state and cookies
+                try:
+                    await context.storage_state(path=str(self.storage_state_file))
+                    _LOGGER.info("Saved portable SSO storage state to %s", self.storage_state_file)
+                except Exception as exc:
+                    _LOGGER.debug("Could not export storage state: %s", exc)
+
                 cookies = await context.cookies(["https://account.smartthings.com"])
                 if cookies:
                     cookie_header = "; ".join(f"{c['name']}={c['value']}" for c in cookies)
@@ -125,22 +134,61 @@ class SmartThingsBrowserRotator:
 
         # Also populate Playwright browser context if possible
         try:
+            import json
+
             from playwright.async_api import async_playwright
 
             self.session_dir.mkdir(parents=True, exist_ok=True)
             cookies_to_add: list[dict[str, Any]] = []
-            for item in cookie_header.split(";"):
-                if "=" in item:
-                    k, v = item.strip().split("=", 1)
-                    if k.strip():
-                        cookies_to_add.append(
-                            {
-                                "name": k.strip(),
-                                "value": v.strip(),
-                                "domain": "account.smartthings.com",
-                                "path": "/",
+
+            # Check if input is multi-domain JSON (Cookie-Editor or storage_state)
+            if raw.startswith("[") or raw.startswith("{"):
+                try:
+                    parsed = json.loads(raw)
+                    cookie_list = (
+                        parsed
+                        if isinstance(parsed, list)
+                        else parsed.get("cookies", [parsed])
+                    )
+                    for c in cookie_list:
+                        if isinstance(c, dict) and "name" in c and "value" in c:
+                            entry = {
+                                "name": str(c["name"]).strip(),
+                                "value": str(c["value"]).strip(),
+                                "domain": str(c.get("domain", "account.smartthings.com")).strip(),
+                                "path": str(c.get("path", "/")).strip(),
                             }
-                        )
+                            if "expirationDate" in c:
+                                entry["expires"] = int(c["expirationDate"])
+                            elif "expires" in c:
+                                entry["expires"] = int(c["expires"])
+                            if "httpOnly" in c:
+                                entry["httpOnly"] = bool(c["httpOnly"])
+                            if "secure" in c:
+                                entry["secure"] = bool(c["secure"])
+                            if "sameSite" in c:
+                                ss = str(c["sameSite"]).lower()
+                                if ss in ("strict", "lax"):
+                                    entry["sameSite"] = ss.capitalize()
+                                elif ss in ("none", "no_restriction"):
+                                    entry["sameSite"] = "None"
+                            cookies_to_add.append(entry)
+                except Exception as err:
+                    _LOGGER.debug("JSON cookie parsing exception: %s", err)
+
+            if not cookies_to_add:
+                for item in cookie_header.split(";"):
+                    if "=" in item:
+                        k, v = item.strip().split("=", 1)
+                        if k.strip():
+                            cookies_to_add.append(
+                                {
+                                    "name": k.strip(),
+                                    "value": v.strip(),
+                                    "domain": "account.smartthings.com",
+                                    "path": "/",
+                                }
+                            )
 
             async with async_playwright() as p:
                 context = await p.chromium.launch_persistent_context(
@@ -149,7 +197,13 @@ class SmartThingsBrowserRotator:
                     args=["--no-sandbox", "--disable-dev-shm-usage"],
                 )
                 await context.add_cookies(cookies_to_add)
+                await context.storage_state(path=str(self.storage_state_file))
                 await context.close()
+                _LOGGER.info(
+                    "Synced %d cookies into persistent session and %s",
+                    len(cookies_to_add),
+                    self.storage_state_file,
+                )
         except Exception as err:
             _LOGGER.debug("Playwright cookie cache sync skipped: %s", err)
 
@@ -252,7 +306,12 @@ class SmartThingsBrowserRotator:
 
                 self.storage.save_token(token=token, token_name=name)
 
-                # Export fresh cookies if available
+                # Export fresh cookies and full storage state if available
+                try:
+                    await context.storage_state(path=str(self.storage_state_file))
+                except Exception as exc:
+                    _LOGGER.debug("Could not export storage state: %s", exc)
+
                 cookies = await context.cookies(["https://account.smartthings.com"])
                 if cookies:
                     cookie_header = "; ".join(f"{c['name']}={c['value']}" for c in cookies)

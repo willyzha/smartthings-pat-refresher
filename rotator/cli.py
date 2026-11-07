@@ -9,7 +9,12 @@ import sys
 import time
 
 from .browser import SmartThingsBrowserRotator
-from .const import DEFAULT_COOKIES_FILE, DEFAULT_SERVER_HOST, DEFAULT_SERVER_PORT
+from .const import (
+    DEFAULT_COOKIES_FILE,
+    DEFAULT_SERVER_HOST,
+    DEFAULT_SERVER_PORT,
+    DEFAULT_STORAGE_STATE_FILE,
+)
 from .server import RotatorServer
 from .storage import TokenStorage
 
@@ -27,7 +32,9 @@ def setup_logging(verbose: bool = False) -> None:
 def cmd_setup(args: argparse.Namespace) -> None:
     """Run interactive 1-time browser setup."""
     rotator = SmartThingsBrowserRotator(
-        session_dir=args.session_dir, cookies_file=args.cookies_file
+        session_dir=args.session_dir,
+        cookies_file=args.cookies_file,
+        storage_state_file=args.storage_state,
     )
     asyncio.run(rotator.async_interactive_setup())
 
@@ -45,7 +52,9 @@ def cmd_import_cookies(args: argparse.Namespace) -> None:
             cookie_input = sys.stdin.read()
 
     rotator = SmartThingsBrowserRotator(
-        session_dir=args.session_dir, cookies_file=args.cookies_file
+        session_dir=args.session_dir,
+        cookies_file=args.cookies_file,
+        storage_state_file=args.storage_state,
     )
     try:
         asyncio.run(rotator.async_import_cookies(cookie_input))
@@ -60,6 +69,7 @@ def cmd_rotate(args: argparse.Namespace) -> None:
     rotator = SmartThingsBrowserRotator(
         session_dir=args.session_dir,
         cookies_file=args.cookies_file,
+        storage_state_file=args.storage_state,
         storage=storage,
     )
     try:
@@ -76,6 +86,7 @@ def cmd_serve(args: argparse.Namespace) -> None:
     rotator = SmartThingsBrowserRotator(
         session_dir=args.session_dir,
         cookies_file=args.cookies_file,
+        storage_state_file=args.storage_state,
         storage=storage,
     )
     server = RotatorServer(
@@ -147,6 +158,11 @@ def main() -> None:
         "--cookies-file",
         default=str(DEFAULT_COOKIES_FILE),
         help=f"Path to cookies file (default: {DEFAULT_COOKIES_FILE})",
+    )
+    parser.add_argument(
+        "--storage-state",
+        default=str(DEFAULT_STORAGE_STATE_FILE),
+        help=f"Path to Playwright storage_state.json (default: {DEFAULT_STORAGE_STATE_FILE})",
     )
     parser.add_argument(
         "--token-file",
