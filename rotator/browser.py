@@ -71,6 +71,83 @@ class SmartThingsBrowserRotator:
             finally:
                 await context.close()
 
+    async def async_import_cookies(self, cookie_data: str) -> None:
+        """Import cookies from JSON or header string and verify session."""
+        import json
+        from playwright.async_api import async_playwright
+
+        self.session_dir.mkdir(parents=True, exist_ok=True)
+        raw = cookie_data.strip()
+
+        # Check if cookie_data is a file path
+        if Path(raw).is_file():
+            raw = Path(raw).read_text(encoding="utf-8").strip()
+
+        cookies_to_add: list[dict[str, Any]] = []
+
+        # Try parsing JSON format (e.g. Cookie-Editor export)
+        if raw.startswith("[") or raw.startswith("{"):
+            try:
+                parsed = json.loads(raw)
+                cookie_list = parsed if isinstance(parsed, list) else [parsed]
+                for c in cookie_list:
+                    cookie_entry = {
+                        "name": c["name"],
+                        "value": str(c["value"]),
+                        "domain": c.get("domain", ".smartthings.com"),
+                        "path": c.get("path", "/"),
+                    }
+                    if "secure" in c:
+                        cookie_entry["secure"] = bool(c["secure"])
+                    if "httpOnly" in c:
+                        cookie_entry["httpOnly"] = bool(c["httpOnly"])
+                    if "sameSite" in c and c["sameSite"] in ("Strict", "Lax", "None"):
+                        cookie_entry["sameSite"] = c["sameSite"]
+                    cookies_to_add.append(cookie_entry)
+            except Exception as err:
+                raise RotatorError(f"Could not parse cookie JSON: {err}") from err
+        else:
+            # Parse Cookie header string: "key1=val1; key2=val2"
+            for item in raw.split(";"):
+                if "=" in item:
+                    k, v = item.strip().split("=", 1)
+                    if k.strip():
+                        cookies_to_add.append(
+                            {
+                                "name": k.strip(),
+                                "value": v.strip(),
+                                "domain": ".smartthings.com",
+                                "path": "/",
+                            }
+                        )
+
+        if not cookies_to_add:
+            raise RotatorError("No valid cookies found in input.")
+
+        _LOGGER.info("Importing %d cookies into session profile...", len(cookies_to_add))
+
+        async with async_playwright() as p:
+            context = await p.chromium.launch_persistent_context(
+                user_data_dir=str(self.session_dir),
+                headless=True,
+                args=["--no-sandbox", "--disable-dev-shm-usage"],
+            )
+            try:
+                await context.add_cookies(cookies_to_add)
+                page = context.pages[0] if context.pages else await context.new_page()
+                await page.goto(DEFAULT_TOKENS_URL, timeout=30000)
+                await page.wait_for_load_state("networkidle", timeout=15000)
+
+                if "signin" in page.url or "login" in page.url:
+                    raise SessionExpiredError(
+                        "Cookies imported, but Samsung redirected to login page. "
+                        "Make sure you copied all cookies while logged into account.smartthings.com/tokens."
+                    )
+
+                print("\n[SUCCESS] Cookies successfully imported and session verified on SmartThings!")
+            finally:
+                await context.close()
+
     async def async_rotate(
         self,
         headless: bool = True,

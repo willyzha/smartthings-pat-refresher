@@ -30,6 +30,25 @@ def cmd_setup(args: argparse.Namespace) -> None:
     asyncio.run(rotator.async_interactive_setup())
 
 
+def cmd_import_cookies(args: argparse.Namespace) -> None:
+    """Import session cookies from your regular browser."""
+    cookie_input = args.cookies
+    if not cookie_input:
+        if args.file:
+            from pathlib import Path
+            cookie_input = Path(args.file).read_text(encoding="utf-8")
+        else:
+            print("Paste your cookies (JSON or header string) and press Enter followed by Ctrl+D:")
+            cookie_input = sys.stdin.read()
+
+    rotator = SmartThingsBrowserRotator(session_dir=args.session_dir)
+    try:
+        asyncio.run(rotator.async_import_cookies(cookie_input))
+    except Exception as err:
+        print(f"\n[ERROR] Cookie import failed: {err}", file=sys.stderr)
+        sys.exit(1)
+
+
 def cmd_rotate(args: argparse.Namespace) -> None:
     """Execute a single one-shot headless rotation."""
     storage = TokenStorage(token_file=args.token_file)
@@ -122,6 +141,12 @@ def main() -> None:
     # setup
     p_setup = subparsers.add_parser("setup", help="1-time interactive login to approve 2FA")
     p_setup.set_defaults(func=cmd_setup)
+
+    # import-cookies
+    p_import = subparsers.add_parser("import-cookies", help="Import session cookies from regular browser")
+    p_import.add_argument("--file", help="Path to cookie JSON file")
+    p_import.add_argument("cookies", nargs="?", help="Cookie string or JSON")
+    p_import.set_defaults(func=cmd_import_cookies)
 
     # rotate
     p_rotate = subparsers.add_parser("rotate", help="One-shot headless token rotation")
