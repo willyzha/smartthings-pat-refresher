@@ -15,16 +15,22 @@ try:
     from homeassistant.core import HomeAssistant
     from homeassistant.helpers.entity_platform import AddEntitiesCallback
 except ImportError:
+
     class LightEntity:  # type: ignore[no-redef]
         pass
+
     class ColorMode:  # type: ignore[no-redef]
         ONOFF = "on_off"
         BRIGHTNESS = "brightness"
+
     ATTR_BRIGHTNESS = "brightness"
+
     class HomeAssistant:  # type: ignore[no-redef]
         pass
+
     class ConfigEntry:  # type: ignore[no-redef]
         pass
+
     AddEntitiesCallback = Any  # type: ignore[misc,assignment]
 
 from .const import DOMAIN

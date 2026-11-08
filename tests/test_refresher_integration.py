@@ -27,6 +27,7 @@ async def test_config_flow_form_display() -> None:
 @pytest.mark.asyncio
 async def test_config_flow_success(aiohttp_client) -> None:
     """Test successful config flow verifying rotator and SmartThings API."""
+
     async def handle_rotator_token(request: web.Request) -> web.Response:
         return web.Response(text="test-rotator-pat-token-1234567890abcdef")
 
@@ -44,13 +45,16 @@ async def test_config_flow_success(aiohttp_client) -> None:
     rotator_url = str(client.make_url(""))
     locations_url = str(client.make_url("/v1/locations"))
 
-    with patch(
-        "custom_components.smartthings_refresher.config_flow.async_get_clientsession",
-        return_value=client.session,
-    ), patch(
-        "custom_components.smartthings_refresher.config_flow.SMARTTHINGS_LOCATIONS_API",
-        locations_url,
-        create=True,
+    with (
+        patch(
+            "custom_components.smartthings_refresher.config_flow.async_get_clientsession",
+            return_value=client.session,
+        ),
+        patch(
+            "custom_components.smartthings_refresher.config_flow.SMARTTHINGS_LOCATIONS_API",
+            locations_url,
+            create=True,
+        ),
     ):
         result = await flow.async_step_user({CONF_ROTATOR_URL: rotator_url})
         assert result["type"] == "create_entry"
@@ -61,6 +65,7 @@ async def test_config_flow_success(aiohttp_client) -> None:
 @pytest.mark.asyncio
 async def test_config_flow_cannot_connect(aiohttp_client) -> None:
     """Test config flow when rotator server returns 500 or is unavailable."""
+
     async def handle_error(request: web.Request) -> web.Response:
         return web.Response(status=500, text="Internal Error")
 
@@ -84,6 +89,7 @@ async def test_config_flow_cannot_connect(aiohttp_client) -> None:
 @pytest.mark.asyncio
 async def test_async_setup_and_unload_entry(aiohttp_client) -> None:
     """Test entry setup initializing client and runtime_data."""
+
     async def handle_token(request: web.Request) -> web.Response:
         return web.Response(text="live-pat-from-rotator-container-999")
 

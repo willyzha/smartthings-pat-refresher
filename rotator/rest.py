@@ -170,9 +170,7 @@ class SmartThingsRestClient:
 
         timeout = ClientTimeout(total=20)
         async with ClientSession(timeout=timeout) as session:
-            async with session.post(
-                SMARTTHINGS_ACCOUNT_API, json=payload, headers=headers
-            ) as resp:
+            async with session.post(SMARTTHINGS_ACCOUNT_API, json=payload, headers=headers) as resp:
                 if resp.status in (401, 403):
                     raise RestAuthExpiredError(
                         f"Authentication expired (HTTP {resp.status}). Fresh cookies required."
@@ -223,11 +221,7 @@ class SmartThingsRestClient:
             for item in tokens:
                 dev_name = item.get("deviceName", "")
                 auth_key = item.get("authKey", "")
-                if (
-                    auth_key
-                    and dev_name.startswith(prefix)
-                    and auth_key != current_auth_key
-                ):
+                if auth_key and dev_name.startswith(prefix) and auth_key != current_auth_key:
                     _LOGGER.info(
                         "Cleaning up old rotated PAT '%s' (authKey: %s...)",
                         dev_name,

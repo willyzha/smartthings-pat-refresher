@@ -15,18 +15,23 @@ try:
     from homeassistant.core import HomeAssistant
     from homeassistant.helpers.entity_platform import AddEntitiesCallback
 except ImportError:
+
     class BinarySensorEntity:  # type: ignore[no-redef]
         pass
+
     class BinarySensorDeviceClass:  # type: ignore[no-redef]
         MOTION = "motion"
         DOOR = "door"
         MOISTURE = "moisture"
         PRESENCE = "presence"
         SMOKE = "smoke"
+
     class HomeAssistant:  # type: ignore[no-redef]
         pass
+
     class ConfigEntry:  # type: ignore[no-redef]
         pass
+
     AddEntitiesCallback = Any  # type: ignore[misc,assignment]
 
 from .const import DOMAIN

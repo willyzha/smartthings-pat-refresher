@@ -14,19 +14,26 @@ flowchart LR
     subgraph Host["Your Server / Docker Network"]
         Rotator["smartthings-pat-rotator\n(Docker Container :8765)"]
         HA["Home Assistant\n(Docker Container :8123)"]
+        MQTT["Mosquitto MQTT Broker\n(:1883)"]
         HACS["SmartThings Refresher\n(HACS Custom Integration)"]
         
         HA --- HACS
         HACS -->|"GET /token\n(Auto-refresh)"| Rotator
+        Rotator -->|"MQTT Discovery & Telemetry\n(homeassistant/sensor/...)"| MQTT
+        MQTT -->|"Native Auto-Discovery"| HA
+        HA -->|"Control Commands\n(smartthings/.../set)"| MQTT
+        MQTT --> Rotator
     end
 
     subgraph Samsung["Samsung Cloud"]
         Portal["account.smartthings.com/api/tokens\n(REST Minting Endpoint)"]
         API["api.smartthings.com/v1\n(SmartThings REST API)"]
+        Dashboard["my.smartthings.com/socket.io\n(30-Day FeathersJS Session)"]
     end
 
     Rotator -->|"Mints 24h PAT\n(Headless REST, every 20h)"| Portal
     HACS -->|"Controls Devices\n(Bearer <active_pat>)"| API
+    Rotator <-->|"Persistent 30-day Push Events\n& Appliance Telemetry"| Dashboard
 ```
 
 ---
@@ -97,10 +104,37 @@ The rotator container will:
 - Provide a health endpoint at `http://localhost:8765/health`.
 - Offer a transparent proxy with automatic Bearer token injection at `http://localhost:8765/v1/...`.
 - Run a background worker that mints a fresh token every 20 hours and purges older tokens on Samsung's cloud.
+- Maintain a **30-day persistent rolling session** with `my.smartthings.com` Socket.IO for real-time appliance push events.
 
 ---
 
-### Step 3: Install the HACS Integration
+### Step 3 (Optional & Recommended): Home Assistant MQTT Discovery Bridge
+
+If you have SmartThings appliances (Washer, Dryer, Refrigerator, Range, Air Quality Monitor, Door Locks, Plugs), you can expose them directly to Home Assistant as **native entities with zero custom code** using the built-in Home Assistant MQTT Discovery Bridge!
+
+1. Edit `docker-compose.yml` to specify your MQTT broker:
+   ```yaml
+   services:
+     smartthings-pat-rotator:
+       # ...
+       environment:
+         - PYTHONUNBUFFERED=1
+         - MQTT_HOST=192.168.1.50          # IP of your Home Assistant / Mosquitto broker
+         # - MQTT_PORT=1883
+         # - MQTT_USER=homeassistant
+         # - MQTT_PASSWORD=secret
+   ```
+2. Restart the rotator:
+   ```bash
+   docker compose up -d
+   ```
+3. Open Home Assistant:
+   - Navigate to **Settings** > **Devices & Services** > **MQTT**.
+   - Your SmartThings devices and appliances will **automatically appear** with all their sensors (PM2.5, Washer cycle state, Dryer mode, Refrigerator cooler/freezer temperatures, Front Door lock, switch controls) organized neatly under their device cards!
+
+---
+
+### Step 4: Install the HACS Integration (For standard REST devices)
 
 1. In Home Assistant, open **HACS** > **Integrations**.
 2. Click the top-right menu (3 dots) > **Custom repositories**.
@@ -142,6 +176,20 @@ curl -X POST http://localhost:8765/rotate
 
 # Test device querying via transparent proxy
 curl http://localhost:8765/v1/devices
+
+# Check 30-day dashboard session health & MQTT bridge status
+curl http://localhost:8765/dashboard/health
+
+# List all discovered SmartThings appliances and devices
+curl http://localhost:8765/dashboard/devices
+
+# Inspect real-time status of a specific device (e.g. Washer or Lock)
+curl http://localhost:8765/dashboard/devices/<DEVICE_ID>/status
+
+# Send an on/off command to a switch via dashboard Socket.IO
+curl -X POST http://localhost:8765/dashboard/devices/<DEVICE_ID>/command \
+  -H "Content-Type: application/json" \
+  -d '{"capability": "switch", "command": "on"}'
 ```
 
 ---

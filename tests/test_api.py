@@ -44,9 +44,7 @@ async def test_async_fetch_token_from_rotator_success(mock_session: MagicMock) -
 @pytest.mark.asyncio
 async def test_async_fetch_token_from_rotator_404(mock_session: MagicMock) -> None:
     """Test rotator returning 404 raises SmartThingsAuthError."""
-    mock_session.get.return_value = MockAiohttpResponse(
-        status=404, text_data="No token available"
-    )
+    mock_session.get.return_value = MockAiohttpResponse(status=404, text_data="No token available")
 
     client = SmartThingsApiClient(
         session=mock_session,

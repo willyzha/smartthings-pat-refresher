@@ -28,10 +28,12 @@ def test_extract_cookies_and_xsrf_header_format() -> None:
 
 def test_extract_cookies_and_xsrf_json_format() -> None:
     """Test extracting cookies and XSRF from Cookie-Editor JSON format."""
-    raw = json.dumps([
-        {"name": "XSRF-TOKEN", "value": "json-xsrf-abc"},
-        {"name": "session", "value": "val-def"},
-    ])
+    raw = json.dumps(
+        [
+            {"name": "XSRF-TOKEN", "value": "json-xsrf-abc"},
+            {"name": "session", "value": "val-def"},
+        ]
+    )
     header, xsrf = extract_cookies_and_xsrf(raw)
     assert xsrf == "json-xsrf-abc"
     assert "XSRF-TOKEN=json-xsrf-abc" in header
@@ -71,10 +73,12 @@ async def test_rest_create_and_rotate(aiohttp_client, tmp_path) -> None:
                 status=201,
             )
         elif request.method == "GET":
-            return web.json_response([
-                {"deviceName": "HA_AutoPAT_old", "authKey": "old-auth-key-1111"},
-                {"deviceName": "HomeAssistant_Permanent", "authKey": "perm-auth-key"},
-            ])
+            return web.json_response(
+                [
+                    {"deviceName": "HA_AutoPAT_old", "authKey": "old-auth-key-1111"},
+                    {"deviceName": "HomeAssistant_Permanent", "authKey": "perm-auth-key"},
+                ]
+            )
         return web.Response(status=405)
 
     async def handle_delete(request: web.Request) -> web.Response:
@@ -111,6 +115,7 @@ async def test_rest_create_and_rotate(aiohttp_client, tmp_path) -> None:
 @pytest.mark.asyncio
 async def test_rest_expired_auth(aiohttp_client, tmp_path) -> None:
     """Test handling of 401/403 session expiration."""
+
     async def handle_forbidden(request: web.Request) -> web.Response:
         return web.Response(status=401, text="Unauthorized")
 
@@ -150,9 +155,7 @@ async def test_browser_rotator_prefers_rest(tmp_path) -> None:
         storage=storage,
     )
 
-    with patch.object(
-        rotator.rest_client, "async_rotate", new_callable=AsyncMock
-    ) as mock_rest:
+    with patch.object(rotator.rest_client, "async_rotate", new_callable=AsyncMock) as mock_rest:
         mock_rest.return_value = "rest-token-instant"
 
         token = await rotator.async_rotate()

@@ -38,6 +38,7 @@ except ImportError:
     def async_get_clientsession(hass: Any) -> Any:
         return None
 
+
 from .api import SmartThingsApiClient, SmartThingsApiError, SmartThingsAuthError
 from .const import (
     CONF_ACCESS_TOKEN,
@@ -54,9 +55,7 @@ class SmartThingsPlusConfigFlow(config_entries.ConfigFlow, domain=DOMAIN):
 
     VERSION = 1
 
-    async def async_step_user(
-        self, user_input: dict[str, Any] | None = None
-    ) -> dict[str, Any]:
+    async def async_step_user(self, user_input: dict[str, Any] | None = None) -> dict[str, Any]:
         """Configure integration using the SmartThings PAT Rotator URL."""
         errors: dict[str, str] = {}
 

@@ -35,6 +35,7 @@ except ImportError:
     def async_get_clientsession(hass: Any) -> Any:
         return None
 
+
 from .api import SmartThingsApiClient
 from .const import (
     CONF_ACCESS_TOKEN,

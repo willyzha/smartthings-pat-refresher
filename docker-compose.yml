@@ -11,6 +11,13 @@ services:
       - ./data:/app/data
     environment:
       - PYTHONUNBUFFERED=1
+      # Home Assistant MQTT Discovery Bridge (uncomment & configure to expose devices as native HA entities):
+      # - MQTT_HOST=192.168.1.50
+      # - MQTT_PORT=1883
+      # - MQTT_USER=homeassistant
+      # - MQTT_PASSWORD=your_mqtt_password
+      # - MQTT_TOPIC_PREFIX=smartthings
+      # - MQTT_DISCOVERY_PREFIX=homeassistant
 
   # Home Assistant example (if running together on the same Docker network):
   # homeassistant:

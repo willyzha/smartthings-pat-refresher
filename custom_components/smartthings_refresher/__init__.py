@@ -76,6 +76,7 @@ except ImportError:
     def async_track_time_interval(hass: Any, cb: Any, interval: Any) -> Any:
         return lambda: None
 
+
 from .const import (
     CONF_REFRESH_INTERVAL,
     CONF_ROTATOR_URL,
@@ -88,9 +89,7 @@ _LOGGER = logging.getLogger(__name__)
 type SmartThingsRefresherConfigEntry = ConfigEntry[SmartThingsData] if TYPE_CHECKING else Any
 
 
-async def async_setup_entry(
-    hass: HomeAssistant, entry: SmartThingsRefresherConfigEntry
-) -> bool:
+async def async_setup_entry(hass: HomeAssistant, entry: SmartThingsRefresherConfigEntry) -> bool:
     """Initialize SmartThings Refresher config entry with token rotator hook."""
     rotator_url = entry.data.get(CONF_ROTATOR_URL, DEFAULT_ROTATOR_URL).rstrip("/")
     session = async_get_clientsession(hass)
@@ -99,16 +98,12 @@ async def async_setup_entry(
         """Fetch fresh Personal Access Token from rotator container."""
         timeout = ClientTimeout(total=10)
         try:
-            async with session.get(
-                f"{rotator_url}/token?format=raw", timeout=timeout
-            ) as resp:
+            async with session.get(f"{rotator_url}/token?format=raw", timeout=timeout) as resp:
                 if resp.status == 200:
                     token = (await resp.text()).strip()
                     if token and len(token) > 20:
                         return token
-                raise ConfigEntryAuthFailed(
-                    f"Rotator at {rotator_url} returned HTTP {resp.status}"
-                )
+                raise ConfigEntryAuthFailed(f"Rotator at {rotator_url} returned HTTP {resp.status}")
         except Exception as err:
             raise ConfigEntryAuthFailed(
                 f"Cannot retrieve token from PAT rotator at {rotator_url}: {err}"
@@ -129,8 +124,7 @@ async def async_setup_entry(
         location_id = locations[0].location_id
 
         rooms = {
-            room.room_id: room.name
-            for room in await client.get_rooms(location_id=location_id)
+            room.room_id: room.name for room in await client.get_rooms(location_id=location_id)
         }
         devices = await client.get_devices()
 
@@ -157,8 +151,7 @@ async def async_setup_entry(
             )
 
         scenes = {
-            scene.scene_id: scene
-            for scene in await client.get_scenes(location_id=location_id)
+            scene.scene_id: scene for scene in await client.get_scenes(location_id=location_id)
         }
 
     except SmartThingsAuthenticationFailedError as err:
@@ -229,9 +222,7 @@ async def async_setup_entry(
     return True
 
 
-async def async_unload_entry(
-    hass: HomeAssistant, entry: SmartThingsRefresherConfigEntry
-) -> bool:
+async def async_unload_entry(hass: HomeAssistant, entry: SmartThingsRefresherConfigEntry) -> bool:
     """Unload a config entry."""
     if hasattr(hass, "config_entries") and PLATFORMS:
         return await hass.config_entries.async_unload_platforms(entry, PLATFORMS)

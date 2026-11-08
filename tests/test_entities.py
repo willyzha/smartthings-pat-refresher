@@ -101,9 +101,7 @@ async def test_light_entity(mock_coordinator: MagicMock) -> None:
 async def test_sensor_entities(mock_coordinator: MagicMock) -> None:
     """Test SmartThingsSensor native value and unit parsing."""
     sensors = {
-        cfg.capability: SmartThingsSensor(
-            mock_coordinator, MOCK_DEVICE_ID_SENSOR, "main", cfg
-        )
+        cfg.capability: SmartThingsSensor(mock_coordinator, MOCK_DEVICE_ID_SENSOR, "main", cfg)
         for cfg in SENSOR_TYPES
     }
 

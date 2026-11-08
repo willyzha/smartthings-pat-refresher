@@ -92,9 +92,16 @@ def cmd_serve(args: argparse.Namespace) -> None:
     server = RotatorServer(
         storage=storage,
         rotator=rotator,
+        storage_state_file=args.storage_state,
         host=args.host,
         port=args.port,
         rotation_interval_hours=args.interval,
+        mqtt_host=args.mqtt_host,
+        mqtt_port=args.mqtt_port,
+        mqtt_username=args.mqtt_user,
+        mqtt_password=args.mqtt_password,
+        mqtt_topic_prefix=args.mqtt_topic_prefix,
+        mqtt_discovery_prefix=args.mqtt_discovery_prefix,
     )
     try:
         asyncio.run(server.start())
@@ -146,9 +153,7 @@ def main() -> None:
         prog="smartthings-pat-rotator",
         description="Lightweight 24-hour SmartThings Personal Access Token (PAT) Auto-Rotator",
     )
-    parser.add_argument(
-        "-v", "--verbose", action="store_true", help="Enable verbose debug logging"
-    )
+    parser.add_argument("-v", "--verbose", action="store_true", help="Enable verbose debug logging")
     parser.add_argument(
         "--session-dir",
         default="data/session",
@@ -205,6 +210,37 @@ def main() -> None:
         type=int,
         default=20,
         help="Rotation interval hours (default: 20)",
+    )
+    p_serve.add_argument(
+        "--mqtt-host",
+        default=None,
+        help="MQTT broker host (enables Home Assistant MQTT Discovery Bridge)",
+    )
+    p_serve.add_argument(
+        "--mqtt-port",
+        type=int,
+        default=None,
+        help="MQTT broker port (default: 1883)",
+    )
+    p_serve.add_argument(
+        "--mqtt-user",
+        default=None,
+        help="MQTT broker username",
+    )
+    p_serve.add_argument(
+        "--mqtt-password",
+        default=None,
+        help="MQTT broker password",
+    )
+    p_serve.add_argument(
+        "--mqtt-topic-prefix",
+        default="smartthings",
+        help="MQTT topic prefix (default: smartthings)",
+    )
+    p_serve.add_argument(
+        "--mqtt-discovery-prefix",
+        default="homeassistant",
+        help="Home Assistant MQTT discovery prefix (default: homeassistant)",
     )
     p_serve.set_defaults(func=cmd_serve)
 

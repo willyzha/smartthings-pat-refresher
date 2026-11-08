@@ -22,6 +22,7 @@ except ImportError:
         def __init__(self, **kwargs: Any) -> None:
             self.__dict__.update(kwargs)
 
+
 from .const import DOMAIN
 from .coordinator import SmartThingsDataUpdateCoordinator
 
@@ -81,9 +82,7 @@ class SmartThingsEntity(CoordinatorEntity):
         device = self.device_entry
         name = device.get("label") or device.get("name") or "SmartThings Device"
         manufacturer = (
-            device.get("manufacturerName")
-            or device.get("deviceManufacturerCode")
-            or "SmartThings"
+            device.get("manufacturerName") or device.get("deviceManufacturerCode") or "SmartThings"
         )
         model = (
             device.get("deviceModel")

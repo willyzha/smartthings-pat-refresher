@@ -44,9 +44,7 @@ async def test_config_flow_success() -> None:
         mock_instance.async_get_devices = AsyncMock(return_value=[])
         mock_client_cls.return_value = mock_instance
 
-        result = await flow.async_step_user(
-            {CONF_ROTATOR_URL: DEFAULT_ROTATOR_URL}
-        )
+        result = await flow.async_step_user({CONF_ROTATOR_URL: DEFAULT_ROTATOR_URL})
 
         assert result["type"] == "create_entry"
         assert result["title"] == "SmartThings Plus"
@@ -69,9 +67,7 @@ async def test_config_flow_no_token() -> None:
         )
         mock_client_cls.return_value = mock_instance
 
-        result = await flow.async_step_user(
-            {CONF_ROTATOR_URL: DEFAULT_ROTATOR_URL}
-        )
+        result = await flow.async_step_user({CONF_ROTATOR_URL: DEFAULT_ROTATOR_URL})
 
         assert result["type"] == "form"
         assert result["errors"]["base"] == "no_token"
@@ -92,9 +88,7 @@ async def test_config_flow_cannot_connect() -> None:
         )
         mock_client_cls.return_value = mock_instance
 
-        result = await flow.async_step_user(
-            {CONF_ROTATOR_URL: "http://non-existent-host:8765"}
-        )
+        result = await flow.async_step_user({CONF_ROTATOR_URL: "http://non-existent-host:8765"})
 
         assert result["type"] == "form"
         assert result["errors"]["base"] == "cannot_connect"

@@ -15,4 +15,7 @@ DEFAULT_SERVER_HOST = "0.0.0.0"
 TOKEN_PREFIX = "HA_AutoPAT_"
 SMARTTHINGS_API_BASE = "https://api.smartthings.com/v1"
 SMARTTHINGS_ACCOUNT_API = "https://account.smartthings.com/api/tokens"
-
+DEFAULT_MQTT_PORT = 1883
+DEFAULT_MQTT_TOPIC_PREFIX = "smartthings"
+DEFAULT_MQTT_DISCOVERY_PREFIX = "homeassistant"
+DEFAULT_DISCOVERY_PREFIX = "homeassistant"

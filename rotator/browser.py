@@ -146,9 +146,7 @@ class SmartThingsBrowserRotator:
                 try:
                     parsed = json.loads(raw)
                     cookie_list = (
-                        parsed
-                        if isinstance(parsed, list)
-                        else parsed.get("cookies", [parsed])
+                        parsed if isinstance(parsed, list) else parsed.get("cookies", [parsed])
                     )
                     for c in cookie_list:
                         if isinstance(c, dict) and "name" in c and "value" in c:

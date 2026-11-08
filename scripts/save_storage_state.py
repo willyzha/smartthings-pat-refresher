@@ -12,7 +12,6 @@ import logging
 import os
 import shutil
 import subprocess
-import time
 from pathlib import Path
 
 from playwright.async_api import async_playwright
@@ -60,15 +59,18 @@ async def main() -> None:
     # Launch official Chrome with remote debugging on port 9222
     env = os.environ.copy()
     env.setdefault("DISPLAY", ":0.0")
-    proc = subprocess.Popen([
-        chrome_bin,
-        f"--user-data-dir={SESSION_DIR.resolve()}",
-        "--remote-debugging-port=9222",
-        "--remote-debugging-address=0.0.0.0",
-        "--no-first-run",
-        "--no-default-browser-check",
-        "https://account.smartthings.com/tokens",
-    ], env=env)
+    proc = subprocess.Popen(
+        [
+            chrome_bin,
+            f"--user-data-dir={SESSION_DIR.resolve()}",
+            "--remote-debugging-port=9222",
+            "--remote-debugging-address=0.0.0.0",
+            "--no-first-run",
+            "--no-default-browser-check",
+            "https://account.smartthings.com/tokens",
+        ],
+        env=env,
+    )
 
     # Wait for Chrome DevTools port to open
     await asyncio.sleep(2.5)
@@ -101,9 +103,13 @@ async def main() -> None:
                                 # 2. Extract in-memory SmartThings cookies
                                 cookies = await context.cookies(["https://account.smartthings.com"])
                                 if cookies:
-                                    cookie_header = "; ".join(f"{c['name']}={c['value']}" for c in cookies)
+                                    cookie_header = "; ".join(
+                                        f"{c['name']}={c['value']}" for c in cookies
+                                    )
                                     COOKIES_FILE.write_text(cookie_header + "\n", encoding="utf-8")
-                                    print(f"Extracted {len(cookies)} live cookies to: {COOKIES_FILE}")
+                                    print(
+                                        f"Extracted {len(cookies)} live cookies to: {COOKIES_FILE}"
+                                    )
 
                                 saved = True
                                 break

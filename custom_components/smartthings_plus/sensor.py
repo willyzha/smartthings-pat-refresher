@@ -22,8 +22,10 @@ try:
     from homeassistant.core import HomeAssistant
     from homeassistant.helpers.entity_platform import AddEntitiesCallback
 except ImportError:
+
     class SensorEntity:  # type: ignore[no-redef]
         pass
+
     class SensorDeviceClass:  # type: ignore[no-redef]
         TEMPERATURE = "temperature"
         HUMIDITY = "humidity"
@@ -31,21 +33,29 @@ except ImportError:
         POWER = "power"
         ENERGY = "energy"
         ILLUMINANCE = "illuminance"
+
     class SensorStateClass:  # type: ignore[no-redef]
         MEASUREMENT = "measurement"
         TOTAL_INCREASING = "total_increasing"
+
     PERCENTAGE = "%"
+
     class UnitOfTemperature:  # type: ignore[no-redef]
         CELSIUS = "°C"
         FAHRENHEIT = "°F"
+
     class UnitOfPower:  # type: ignore[no-redef]
         WATT = "W"
+
     class UnitOfEnergy:  # type: ignore[no-redef]
         KILO_WATT_HOUR = "kWh"
+
     class HomeAssistant:  # type: ignore[no-redef]
         pass
+
     class ConfigEntry:  # type: ignore[no-redef]
         pass
+
     AddEntitiesCallback = Any  # type: ignore[misc,assignment]
 
 from .const import DOMAIN

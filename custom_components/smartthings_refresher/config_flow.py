@@ -40,6 +40,7 @@ except ImportError:
     def async_get_clientsession(hass: Any) -> Any:
         return None
 
+
 from .const import CONF_ROTATOR_URL, DEFAULT_ROTATOR_URL, DOMAIN
 
 _LOGGER = logging.getLogger(__name__)
@@ -52,9 +53,7 @@ class SmartThingsRefresherConfigFlow(config_entries.ConfigFlow, domain=DOMAIN):
 
     VERSION = 1
 
-    async def async_step_user(
-        self, user_input: dict[str, Any] | None = None
-    ) -> dict[str, Any]:
+    async def async_step_user(self, user_input: dict[str, Any] | None = None) -> dict[str, Any]:
         """Configure integration using the SmartThings PAT Rotator URL."""
         errors: dict[str, str] = {}
 
@@ -62,9 +61,7 @@ class SmartThingsRefresherConfigFlow(config_entries.ConfigFlow, domain=DOMAIN):
             rotator_url = user_input[CONF_ROTATOR_URL].rstrip("/")
 
             session = (
-                async_get_clientsession(self.hass)
-                if hasattr(self, "hass") and self.hass
-                else None
+                async_get_clientsession(self.hass) if hasattr(self, "hass") and self.hass else None
             )
 
             close_session = False
@@ -75,9 +72,7 @@ class SmartThingsRefresherConfigFlow(config_entries.ConfigFlow, domain=DOMAIN):
             try:
                 # 1. Verify connection to the PAT rotator server
                 timeout = ClientTimeout(total=10)
-                async with session.get(
-                    f"{rotator_url}/token?format=raw", timeout=timeout
-                ) as resp:
+                async with session.get(f"{rotator_url}/token?format=raw", timeout=timeout) as resp:
                     if resp.status != 200:
                         errors["base"] = "cannot_connect"
                         return self._show_user_form(user_input, errors)
