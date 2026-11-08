@@ -63,9 +63,9 @@ The rotator validates your session against Samsung's API and mints your first ac
 
 If running on a machine with a desktop display (or X11 forwarding):
 ```bash
-python3 scripts/save_storage_state.py
+./scripts/interactive_login.sh
 ```
-A browser window will open automatically. Complete your Samsung login and 2FA; once the Personal Access Tokens dashboard loads, close the window. The script automatically exports `data/storage_state.json` and `data/cookies.txt`.
+A Google Chrome window opens directly to Samsung login without bot detection flags. Complete your login and 2FA; as soon as the Personal Access Tokens dashboard loads, the script automatically captures your live session cookies, mints a fresh token, and closes the browser for you!
 
 ---
 
