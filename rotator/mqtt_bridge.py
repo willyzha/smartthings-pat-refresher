@@ -334,12 +334,19 @@ class SmartThingsMQTTBridge:
         flat_state: dict[str, Any],
     ) -> None:
         """Generate and publish Home Assistant MQTT discovery configs."""
-        device_dict = {
+        sw_ver = (
+            flat_state.get("version")
+            or flat_state.get("currentVersion")
+            or flat_state.get("versionNumber")
+        )
+        device_dict: dict[str, Any] = {
             "identifiers": [f"smartthings_{device_id}"],
             "name": device_name,
             "manufacturer": "Samsung SmartThings",
-            "model": "Smart Appliance",
+            "model": "SmartThings Device",
         }
+        if sw_ver and isinstance(sw_ver, (str, int)):
+            device_dict["sw_version"] = str(sw_ver)
 
         # Check capabilities (e.g. switch, lock)
         caps = [
