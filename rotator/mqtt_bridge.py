@@ -98,6 +98,24 @@ ENTITY_MAPPINGS: dict[str, dict[str, Any]] = {
         "name_suffix": "Air Quality",
         "icon": "mdi:air-filter",
     },
+    "carbonDioxide": {
+        "component": "sensor",
+        "name_suffix": "Carbon Dioxide",
+        "device_class": "carbon_dioxide",
+        "state_class": "measurement",
+        "unit_of_measurement": "ppm",
+        "icon": "mdi:molecule-co2",
+    },
+    "carbonDioxideHealthConcern": {
+        "component": "sensor",
+        "name_suffix": "CO2 Health Concern",
+        "icon": "mdi:shield-alert-outline",
+    },
+    "fineDustHealthConcern": {
+        "component": "sensor",
+        "name_suffix": "Dust Health Concern",
+        "icon": "mdi:shield-alert-outline",
+    },
     # Appliances: Washer & Dryer
     "washerJobState": {
         "component": "sensor",
@@ -270,6 +288,24 @@ def _clean_entity_name(device_name: str, suffix: str) -> str:
     return suffix
 
 
+def _normalize_unit(unit: str | None) -> str | None:
+    """Normalize unit string to Home Assistant standard unit."""
+    if not unit or not isinstance(unit, str):
+        return None
+    u = unit.strip()
+    if u in ("C", "c", "°C", "degC", "degreesC"):
+        return "°C"
+    if u in ("F", "f", "°F", "degF", "degreesF"):
+        return "°F"
+    if u in ("μg/m^3", "ug/m3", "µg/m3", "μg/m³"):
+        return "µg/m³"
+    if u in ("ppm", "PPM"):
+        return "ppm"
+    if u in ("%", "percent"):
+        return "%"
+    return u
+
+
 class SmartThingsMQTTBridge:
     """Home Assistant MQTT Discovery Bridge for SmartThings."""
 
@@ -421,14 +457,34 @@ class SmartThingsMQTTBridge:
                 "device": device_dict,
             }
 
+            # Check if SmartThings provided a unit in device_status
+            raw_unit = None
+            st_device = getattr(self.dashboard_client, "device_status", {}).get(device_id, {})
+            if isinstance(st_device, dict):
+                attr_entry = st_device.get(key)
+                if isinstance(attr_entry, dict):
+                    raw_unit = attr_entry.get("unit")
+                if not raw_unit and "_" in key:
+                    base_k = key.split("_", 1)[-1]
+                    attr_entry_base = st_device.get(base_k)
+                    if isinstance(attr_entry_base, dict):
+                        raw_unit = attr_entry_base.get("unit")
+
+            normalized_unit = _normalize_unit(raw_unit)
+
             if component == "sensor":
                 config["value_template"] = f"{{{{ value_json.{key} }}}}"
                 if "device_class" in mapping:
                     config["device_class"] = mapping["device_class"]
                 if "state_class" in mapping:
                     config["state_class"] = mapping["state_class"]
-                if "unit_of_measurement" in mapping:
-                    config["unit_of_measurement"] = mapping["unit_of_measurement"]
+                elif normalized_unit and isinstance(val, (int, float)):
+                    config["state_class"] = "measurement"
+
+                unit = normalized_unit or mapping.get("unit_of_measurement")
+                if unit:
+                    config["unit_of_measurement"] = unit
+
                 if "icon" in mapping:
                     config["icon"] = mapping["icon"]
 

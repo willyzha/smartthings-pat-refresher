@@ -8,7 +8,7 @@ from unittest.mock import AsyncMock, MagicMock
 import pytest
 
 from rotator.dashboard import SmartThingsDashboardClient
-from rotator.mqtt_bridge import SmartThingsMQTTBridge, _clean_entity_name
+from rotator.mqtt_bridge import SmartThingsMQTTBridge, _clean_entity_name, _normalize_unit
 
 
 @pytest.mark.asyncio
@@ -153,3 +153,61 @@ def test_clean_entity_name():
     assert _clean_entity_name("Washer", "Washer Job State") == "Job State"
     assert _clean_entity_name("Washer", "Temperature") == "Temperature"
     assert _clean_entity_name("Switch", "Switch") == "Switch"
+
+
+def test_normalize_unit():
+    assert _normalize_unit("C") == "°C"
+    assert _normalize_unit("c") == "°C"
+    assert _normalize_unit("F") == "°F"
+    assert _normalize_unit("f") == "°F"
+    assert _normalize_unit("ppm") == "ppm"
+    assert _normalize_unit("%") == "%"
+    assert _normalize_unit("μg/m^3") == "µg/m³"
+    assert _normalize_unit(None) is None
+
+
+@pytest.mark.asyncio
+async def test_mqtt_discovery_air_quality_dynamic_units():
+    dashboard = SmartThingsDashboardClient()
+    dashboard.devices["dev-air"] = {
+        "deviceId": "dev-air",
+        "name": "ALPSTUGA air quality monitor",
+        "capabilities": ["temperatureMeasurement", "carbonDioxideMeasurement"],
+    }
+    dashboard.device_status["dev-air"] = {
+        "temperature": {"value": 21.2, "unit": "C"},
+        "carbonDioxide": {"value": 950, "unit": "ppm"},
+    }
+
+    bridge = SmartThingsMQTTBridge(
+        dashboard_client=dashboard,
+        mqtt_host="127.0.0.1",
+    )
+
+    published = []
+
+    async def mock_publish(topic, payload, retain=False, qos=0):
+        published.append((topic, json.loads(payload) if payload.startswith("{") else payload))
+
+    bridge._safe_publish = mock_publish
+    bridge._connected = True
+    bridge._client = MagicMock()
+
+    flat_state = {"temperature": 21.2, "carbonDioxide": 950}
+    await bridge._sync_device("dev-air", flat_state)
+
+    # Verify temperature uses dynamic °C
+    temp_conf = next(c for c in published if "temperature" in c[0])[1]
+    assert temp_conf["unit_of_measurement"] == "°C"
+    assert temp_conf["device_class"] == "temperature"
+    assert temp_conf["state_class"] == "measurement"
+    assert temp_conf["has_entity_name"] is True
+    assert temp_conf["name"] == "Temperature"
+
+    # Verify carbon dioxide uses ppm and carbon_dioxide device class
+    co2_conf = next(c for c in published if "carbonDioxide" in c[0])[1]
+    assert co2_conf["unit_of_measurement"] == "ppm"
+    assert co2_conf["device_class"] == "carbon_dioxide"
+    assert co2_conf["state_class"] == "measurement"
+    assert co2_conf["has_entity_name"] is True
+    assert co2_conf["name"] == "Carbon Dioxide"
