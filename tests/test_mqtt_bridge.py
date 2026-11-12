@@ -8,7 +8,7 @@ from unittest.mock import AsyncMock, MagicMock
 import pytest
 
 from rotator.dashboard import SmartThingsDashboardClient
-from rotator.mqtt_bridge import SmartThingsMQTTBridge
+from rotator.mqtt_bridge import SmartThingsMQTTBridge, _clean_entity_name
 
 
 @pytest.mark.asyncio
@@ -61,10 +61,17 @@ async def test_mqtt_discovery_payloads():
 
     # Check temperature sensor config
     temp_conf = next(c for c in washer_configs if "temperature" in c[0])[1]
+    assert temp_conf["has_entity_name"] is True
+    assert temp_conf["name"] == "Temperature"
     assert temp_conf["device_class"] == "temperature"
     assert temp_conf["state_topic"] == "smartthings/dev-washer/state"
     assert temp_conf["value_template"] == "{{ value_json.temperature }}"
     assert temp_conf["device"]["name"] == "Washer"
+
+    # Check washer job state sensor config (cleaned suffix without device name)
+    job_conf = next(c for c in washer_configs if "washerJobState" in c[0])[1]
+    assert job_conf["has_entity_name"] is True
+    assert job_conf["name"] == "Job State"
 
     # Sync lock
     published_messages.clear()
@@ -72,6 +79,8 @@ async def test_mqtt_discovery_payloads():
     await bridge._sync_device("dev-lock", lock_state)
 
     lock_conf = next(c for c in published_messages if "homeassistant/lock" in c[0])[1]
+    assert lock_conf["has_entity_name"] is True
+    assert lock_conf["name"] == "Lock"
     assert lock_conf["command_topic"] == "smartthings/dev-lock/lock/set"
     assert lock_conf["payload_lock"] == "LOCK"
     assert lock_conf["payload_unlock"] == "UNLOCK"
@@ -83,6 +92,8 @@ async def test_mqtt_discovery_payloads():
     await bridge._sync_device("dev-switch", switch_state)
 
     switch_conf = next(c for c in published_messages if "homeassistant/switch" in c[0])[1]
+    assert switch_conf["has_entity_name"] is True
+    assert switch_conf["name"] == "Switch"
     assert switch_conf["command_topic"] == "smartthings/dev-switch/switch/set"
     assert switch_conf["payload_on"] == "on"
     assert switch_conf["payload_off"] == "off"
@@ -128,3 +139,17 @@ async def test_handle_mqtt_command_lock():
 
     dashboard.async_send_command.assert_awaited_once_with("dev-lock", "lock", "unlock")
     bridge._safe_publish.assert_awaited()
+
+
+def test_clean_entity_name():
+    assert _clean_entity_name("Black", "Auto Reconnection") == "Auto Reconnection"
+    assert (
+        _clean_entity_name(
+            "Alpstuga Air Quality Monitor",
+            "Alpstuga Air Quality Monitor Available Version",
+        )
+        == "Available Version"
+    )
+    assert _clean_entity_name("Washer", "Washer Job State") == "Job State"
+    assert _clean_entity_name("Washer", "Temperature") == "Temperature"
+    assert _clean_entity_name("Switch", "Switch") == "Switch"

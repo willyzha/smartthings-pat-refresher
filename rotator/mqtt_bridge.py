@@ -101,22 +101,22 @@ ENTITY_MAPPINGS: dict[str, dict[str, Any]] = {
     # Appliances: Washer & Dryer
     "washerJobState": {
         "component": "sensor",
-        "name_suffix": "Washer Job State",
+        "name_suffix": "Job State",
         "icon": "mdi:washing-machine",
     },
     "washerMode": {
         "component": "sensor",
-        "name_suffix": "Washer Mode",
+        "name_suffix": "Mode",
         "icon": "mdi:washing-machine",
     },
     "dryerJobState": {
         "component": "sensor",
-        "name_suffix": "Dryer Job State",
+        "name_suffix": "Job State",
         "icon": "mdi:tumble-dryer",
     },
     "dryerMode": {
         "component": "sensor",
-        "name_suffix": "Dryer Mode",
+        "name_suffix": "Mode",
         "icon": "mdi:tumble-dryer",
     },
     "machineState": {
@@ -243,6 +243,31 @@ def _split_camel_case(s: str) -> str:
     # e.g. washerJobState -> Washer Job State
     subbed = re.sub(r"([A-Z])", r" \1", s)
     return subbed.replace("_", " ").title().strip()
+
+
+def _clean_entity_name(device_name: str, suffix: str) -> str:
+    """Clean entity name suffix by removing redundant device name prefix if present."""
+    if not device_name or not suffix:
+        return suffix
+
+    # Direct case-insensitive prefix match
+    if suffix.lower().startswith(device_name.lower()):
+        remainder = suffix[len(device_name) :].strip(" -_:")
+        if remainder:
+            return remainder
+
+    # Word-based prefix match (e.g. normalized whitespace/punctuation)
+    d_words = device_name.lower().split()
+    s_words = suffix.split()
+    idx = 0
+    while idx < len(d_words) and idx < len(s_words) and d_words[idx] == s_words[idx].lower():
+        idx += 1
+    if idx > 0 and idx == len(d_words):
+        remainder = " ".join(s_words[idx:]).strip(" -_:")
+        if remainder:
+            return remainder
+
+    return suffix
 
 
 class SmartThingsMQTTBridge:
@@ -381,12 +406,13 @@ class SmartThingsMQTTBridge:
                     component = "sensor"
 
             # Build config payload
-            suffix = mapping.get("name_suffix") or _split_camel_case(key)
-            name = f"{device_name} {suffix}"
+            raw_suffix = mapping.get("name_suffix") or _split_camel_case(key)
+            name = _clean_entity_name(device_name, raw_suffix)
             unique_id = f"smartthings_{device_id}_{key}"
 
             config: dict[str, Any] = {
                 "name": name,
+                "has_entity_name": True,
                 "unique_id": unique_id,
                 "state_topic": f"{self.topic_prefix}/{device_id}/state",
                 "availability_topic": f"{self.topic_prefix}/status",
