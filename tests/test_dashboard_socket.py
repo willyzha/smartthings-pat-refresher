@@ -141,6 +141,41 @@ def test_handle_server_event_and_listeners():
     assert client.get_device_flat_state("dev-lock")["lock"] == "locked"
 
 
+def test_handle_server_event_nested_device_event():
+    listener_calls = []
+
+    def on_event(dev_id, state):
+        listener_calls.append((dev_id, state))
+
+    client = SmartThingsDashboardClient()
+    client.add_listener(on_event)
+
+    real_event_payload = {
+        "data": {
+            "eventTime": 1794545214054,
+            "eventType": "DEVICE_EVENT",
+            "deviceEvent": {
+                "deviceId": "460a0a22-071b-4008-a158-89a2a49ed718",
+                "componentId": "main",
+                "capability": "carbonDioxideMeasurement",
+                "attribute": "carbonDioxide",
+                "value": 734,
+                "unit": "ppm",
+            },
+        },
+        "subscriptionId": "sub-123",
+    }
+
+    client._handle_server_event("api/subscription DEVICE_EVENT", real_event_payload)
+
+    assert len(listener_calls) == 1
+    assert listener_calls[0][0] == "460a0a22-071b-4008-a158-89a2a49ed718"
+    assert listener_calls[0][1]["carbonDioxide"] == 734
+    assert (
+        client.get_device_flat_state("460a0a22-071b-4008-a158-89a2a49ed718")["carbonDioxide"] == 734
+    )
+
+
 @pytest.mark.asyncio
 async def test_async_send_command():
     client = SmartThingsDashboardClient()

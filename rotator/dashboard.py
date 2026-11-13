@@ -284,13 +284,24 @@ class SmartThingsDashboardClient:
         if "DEVICE_EVENT" in event_name or "SPIGOT_EVENT" in event_name:
             # Extract device updates
             update_data = event_data.get("data") if isinstance(event_data, dict) else event_data
-            if isinstance(update_data, dict):
-                dev_id = update_data.get("deviceId")
-                cap = update_data.get("capability")
-                attr = update_data.get("attribute")
-                val = update_data.get("value")
-                unit = update_data.get("unit")
-                comp = update_data.get("componentId", "main")
+            items = update_data if isinstance(update_data, list) else [update_data]
+            for item in items:
+                if not isinstance(item, dict):
+                    continue
+                inner = (
+                    item.get("deviceEvent") if isinstance(item.get("deviceEvent"), dict) else item
+                )
+                dev_id = inner.get("deviceId") or item.get("deviceId")
+                cap = inner.get("capability") or item.get("capability")
+                attr = (
+                    inner.get("attribute")
+                    or inner.get("attributeName")
+                    or item.get("attribute")
+                    or item.get("attributeName")
+                )
+                val = inner.get("value") if "value" in inner else item.get("value")
+                unit = inner.get("unit") or item.get("unit")
+                comp = inner.get("componentId") or item.get("componentId") or "main"
                 if dev_id and attr:
                     key = attr if comp in ("main", None, "") else f"{comp}_{attr}"
                     st = self.device_status.setdefault(dev_id, {})
@@ -301,7 +312,7 @@ class SmartThingsDashboardClient:
                         "componentId": comp,
                         "timestamp": time.time(),
                     }
-                    _LOGGER.debug("Live state update: %s -> %s = %s", dev_id, key, val)
+                    _LOGGER.info("Live state update: %s -> %s = %s", dev_id, key, val)
                     self._notify_listeners(dev_id, self.get_device_flat_state(dev_id))
 
     def _parse_devices_payload(self, raw_data: list[dict[str, Any]]) -> None:
@@ -356,6 +367,50 @@ class SmartThingsDashboardClient:
                     "componentId": comp,
                     "timestamp": item.get("timestamp"),
                 }
+
+    async def _periodic_poll_loop(self) -> None:
+        """Periodically refresh full device statuses as a fallback safety net."""
+        while self._running and self._connected:
+            await asyncio.sleep(60)
+            if not self._connected or not self.location_id:
+                continue
+            try:
+                status_res = await self._call_service(
+                    "find",
+                    "api/device/status",
+                    {"locationId": self.location_id, "deviceIds": None},
+                    timeout=15.0,
+                )
+                if isinstance(status_res, list):
+                    updated_devs: set[str] = set()
+                    for item in status_res:
+                        dev_id = item.get("deviceId")
+                        attr = item.get("attributeName")
+                        val = item.get("value")
+                        unit = item.get("unit")
+                        cap = item.get("capabilityId")
+                        comp = item.get("componentId", "main")
+                        if dev_id and attr:
+                            key = attr if comp in ("main", None, "") else f"{comp}_{attr}"
+                            st = self.device_status.setdefault(dev_id, {})
+                            old_entry = st.get(key)
+                            old_val = (
+                                old_entry.get("value") if isinstance(old_entry, dict) else None
+                            )
+                            if old_val != val:
+                                st[key] = {
+                                    "value": val,
+                                    "unit": unit,
+                                    "capability": cap,
+                                    "componentId": comp,
+                                    "timestamp": item.get("timestamp"),
+                                }
+                                updated_devs.add(dev_id)
+                    for dev_id in updated_devs:
+                        _LOGGER.info("Polled state update for device %s", dev_id)
+                        self._notify_listeners(dev_id, self.get_device_flat_state(dev_id))
+            except Exception as err:
+                _LOGGER.debug("Error in periodic status poll: %s", err)
 
     async def _reader_loop(self, ws: aiohttp.ClientWebSocketResponse) -> None:
         """Continuously read and process frames from WebSocket."""
@@ -472,8 +527,17 @@ class SmartThingsDashboardClient:
                             for dev_id in self.device_status:
                                 self._notify_listeners(dev_id, self.get_device_flat_state(dev_id))
 
-                        # Await reader task until disconnect
-                        await reader_task
+                        poll_task = asyncio.create_task(self._periodic_poll_loop())
+                        try:
+                            # Await reader task until disconnect
+                            await reader_task
+                        finally:
+                            if not poll_task.done():
+                                poll_task.cancel()
+                                try:
+                                    await poll_task
+                                except asyncio.CancelledError:
+                                    pass
                     finally:
                         if not reader_task.done():
                             reader_task.cancel()
